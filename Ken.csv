@@ -1,0 +1,1 @@
+df = pd.read_csv("https://docs.google.com/spreadsheets/d/17T4PPP2Sv5c11mhpsUVRiKBPpBtpqwdRnYT1mnodf7A/edit?usp=drivesdk")
