@@ -16,60 +16,49 @@ POINT_SD         = 7.0
 # -----------------------------
 # Load KenPom-like CSV
 # -----------------------------
-@st.cache_data
+import streamlit as st
+import pandas as pd
+from pathlib import Path
+
+@st.cache_data(ttl=600)  # cache for 10 minutes; adjust as you like
 def load_data():
-    # Try all common paths
-    try_paths = ["Ken.csv", "data/Ken.csv"]
-
-    df_raw = None
-    for p in try_paths:
-        if Path(p).exists():
-            # Header is on row 1 (0-indexed), so header=1
-            df_raw = pd.read_csv(p, encoding="utf-8-sig", header=1)
-            break
-
-    if df_raw is None:
-        st.error("Could not find CSV. Make sure it's in the repo root or data/ folder.")
-        st.stop()
+    # 1) Prefer live Google Sheets URL from secrets
+    url = st.secrets.get("KENPOM_CSV_URL", "").strip()
+    if url:
+        df_raw = pd.read_csv(url)  # Google publishes with the header on the first row
+    else:
+        # 2) Fallback to local file in repo (header row is Row 2 -> header=1)
+        for p in ["Ken.csv", "data/Ken.csv"]:
+            if Path(p).exists():
+                df_raw = pd.read_csv(p, encoding="utf-8-sig", header=1)
+                break
+        else:
+            st.error("No CSV found and no KENPOM_CSV_URL set in secrets.")
+            st.stop()
 
     df_raw.columns = [c.strip() for c in df_raw.columns]
 
-    # Auto-detect Team column
-    team_col = None
-    for c in df_raw.columns:
-        c_norm = c.lower().replace(" ", "")
-        if c_norm in ["team","school","name","teamname"]:
-            team_col = c
-            break
-
-    if team_col is None:
-        st.error(f"Team column not found. Columns detected: {df_raw.columns.tolist()}")
+    # Expect these names based on your sheet
+    required = ["Team", "ORtg", "DRtg", "AdjT"]
+    if not set(required).issubset(df_raw.columns):
+        st.error(f"Missing columns. Found: {df_raw.columns.tolist()}")
         st.stop()
 
-    # Find rating columns (AdjO / ORtg, AdjD / DRtg, Tempo/Pace)
-    def find(cols, names):
-        for n in names:
-            for c in cols:
-                if n == c.lower().replace(" ",""):
-                    return c
-        return None
-
-    adjo = find(df_raw.columns, ["orating","ortg","offrtg","adjo"])
-    adjd = find(df_raw.columns, ["drating","drtg","defrtg","adjd"])
-    adjt = find(df_raw.columns, ["tempo","pace","adjt","possessions"])
-
-    missing = [x for x,y in zip(["AdjO","AdjD","AdjT"],[adjo, adjd, adjt]) if y is None]
-    if missing:
-        st.error(f"Missing columns: {missing}. Found: {df_raw.columns.tolist()}")
-        st.stop()
-
-    df = df_raw[[team_col, adjo, adjd, adjt]].copy()
+    df = df_raw[["Team","ORtg","DRtg","AdjT"]].copy()
     df.columns = ["Team","AdjO","AdjD","AdjT"]
 
     for c in ["AdjO","AdjD","AdjT"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
     return df.dropna()
+
+df = load_data()
+teams = sorted(df["Team"].unique())
+
+# Optional: manual refresh button
+if st.sidebar.button("🔄 Refresh data"):
+    load_data.clear()   # clears the cache
+    st.experimental_rerun()
 
 df = load_data()
 teams = sorted(df["Team"].unique())
