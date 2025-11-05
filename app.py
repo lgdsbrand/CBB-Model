@@ -3,15 +3,18 @@ import pandas as pd
 import numpy as np
 
 # -----------------------------
-# CONFIG & SETUP
+# CONFIG & SETUP  (replace this whole section)
 # -----------------------------
 LEAGUE_AVG_ADJ   = 105.0
-HOME_EDGE_POINTS = 2.2
+HOME_EDGE_POINTS = 1.2
 ALPHA_SHRINK     = 0.12
 TOTAL_EDGE_TH    = 2.0
 SPREAD_EDGE_TH   = 1.5
-N_SIMS           = 8000
-POINT_SD         = 7.0
+
+# Monte Carlo controls
+N_SIMS  = 8000          # number of simulations
+POSS_SD = 4.5           # SD of possessions (per game)
+PPP_SD  = 0.055         # SD of points-per-possession
 
 # -----------------------------
 # Load KenPom-like CSV
