@@ -23,7 +23,7 @@ from pathlib import Path
 @st.cache_data(ttl=600)  # cache for 10 minutes; adjust as you like
 def load_data():
     # 1) Prefer live Google Sheets URL from secrets
-    url = st.secrets.get("KENPOM_CSV_URL", "").strip()
+    url = st.secrets.get("https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=351220539&single=true&output=csv", "").strip()
     if url:
         df_raw = pd.read_csv(url)  # Google publishes with the header on the first row
     else:
