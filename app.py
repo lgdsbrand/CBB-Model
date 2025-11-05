@@ -140,25 +140,25 @@ def confidence_from_edge(edge, hi_edge=6.0):
     return int(round(1 + 9*e))  # 1..10
 
 def stacked_summary(df, away, home, book_home_spread, book_total):
-    # Baseline (for reference)
+    # --- Baseline & Monte Carlo ---
     base_A, base_H = project_scores(df, away, home)
-
-    # Monte Carlo (separate variance)
     sim_A, sim_H = mc_distribution(df, away, home)
+
     score_A = float(sim_A.mean())
     score_H = float(sim_H.mean())
-    model_total = score_A + score_H
-    model_spread_home = score_H - score_A  # + means home by X
+    total   = score_A + score_H
+    spreadH = score_H - score_A  # + means home by X
+
+    # 25–75% ranges (optional)
+    qA_lo, qA_hi = np.percentile(sim_A, [25, 75])
+    qH_lo, qH_hi = np.percentile(sim_H, [25, 75])
+
+    # Win probabilities
     home_win = float((sim_H > sim_A).mean())
     away_win = 1.0 - home_win
 
-    # Ranges (25–75%)
-    qA = np.percentile(sim_A, [25, 75])
-    qH = np.percentile(sim_H, [25, 75])
-    qT = np.percentile(sim_A + sim_H, [25, 75])
-
-    # Totals play
-    total_edge = model_total - book_total
+    # Plays
+    total_edge = total - book_total
     if total_edge >= TOTAL_EDGE_TH:
         total_play = f"OVER {book_total:.1f}"
     elif total_edge <= -TOTAL_EDGE_TH:
@@ -166,9 +166,8 @@ def stacked_summary(df, away, home, book_home_spread, book_total):
     else:
         total_play = "NO BET"
 
-    # Spread play (book input is HOME spread; negative = home favored)
-    book_home_edge = -book_home_spread  # convert to "home by +X"
-    spread_edge = model_spread_home - book_home_edge
+    book_home_edge = -book_home_spread
+    spread_edge = spreadH - book_home_edge
     if spread_edge >= SPREAD_EDGE_TH:
         spread_play = f"{home} {book_home_spread:+.1f}"
     elif spread_edge <= -SPREAD_EDGE_TH:
@@ -176,30 +175,41 @@ def stacked_summary(df, away, home, book_home_spread, book_total):
     else:
         spread_play = "NO BET"
 
-    big_edge = max(abs(total_edge), abs(spread_edge))
-    conf = confidence_from_edge(big_edge)
-
-    # Winner / margin (from MC means)
-    if score_H > score_A:
+    # Winner / margin
+    if score_H >= score_A:
         winner = home
-        margin = score_H - score_A
+        win_line = f"{home} {int(round(score_H))} – {away} {int(round(score_A))}"
+        model_spread_txt = f"{home} {spreadH:+.1f}"
     else:
         winner = away
-        margin = score_A - score_H
+        win_line = f"{away} {int(round(score_A))} – {home} {int(round(score_H))}"
+        model_spread_txt = f"{away} {-spreadH:+.1f}"
 
-    # Pretty, stacked print (monospace block)
-    lines = []
-    lines.append(f"--- GAME SUMMARY: {away} @ {home} ---")
-    lines.append(f"Projected Score        | {away[:12]:>12}: {score_A:5.2f}  | {home[:12]:>12}: {score_H:5.2f}")
-    lines.append(f"Likely Ranges (25–75%) | {away[:12]:>12}: {qA[0]:5.1f}–{qA[1]:5.1f} | {home[:12]:>12}: {qH[0]:5.1f}–{qH[1]:5.1f}")
-    lines.append(f"Projected Winner       | {winner} by {margin:.1f}")
-    lines.append(f"Win Probability        | {away[:12]:>12}: {away_win*100:4.1f}%  | {home[:12]:>12}: {home_win*100:4.1f}%")
-    lines.append(f"Totals                 | Model: {model_total:5.1f}  | Book: {book_total:5.1f}  | Edge: {total_edge:+4.1f}  | Play: {total_play}")
-    lines.append(f"Spread (Home)          | Model: {model_spread_home:+4.1f}  | Book: {book_home_spread:+5.1f} | Edge: {spread_edge:+4.1f} | Play: {spread_play}")
-    lines.append(f"Confidence             | {conf} / 10")
+    # Confidence (1–10)
+    conf = confidence_from_edge(max(abs(total_edge), abs(spread_edge)))
+    conf_pct = conf / 10.0
 
-    st.markdown("### 🏀 College Basketball Projection Model")
-    st.code("\n".join(lines))
+    # ---- STACKED CARD (no horizontal scroll) ----
+    st.subheader(f"{away} @ {home}")
+
+    st.markdown(
+        f"""
+**Prediction:** {win_line}  
+**Projected Winner:** {winner}  
+**Win Probability:** {home} {home_win*100:.0f}%  –  {away} {away_win*100:.0f}%  
+**Model Spread:** {model_spread_txt}  
+**Book Spread (Home):** {book_home_spread:+.1f}  
+**Total Points (Model):** {total:.1f}  
+**Book Total:** {book_total:.1f}  
+**Totals Play:** {total_play}  
+**Spread Play:** {spread_play}  
+**Likely Ranges (25–75%):** {away} {qA_lo:.1f}–{qA_hi:.1f}  |  {home} {qH_lo:.1f}–{qH_hi:.1f}
+"""
+    )
+
+    # confidence bar like your screenshot
+    st.markdown("**Prediction Confidence:**")
+    st.progress(conf_pct)
 
 # =========================
 # STREAMLIT UI
