@@ -24,8 +24,8 @@ def load_data():
     df_raw = None
     for p in try_paths:
         if Path(p).exists():
-            # Header is on row 1 (0-indexed), so header=1
-            df_raw = pd.read_csv(p, encoding="utf-8-sig", header=1)
+            # Header is on row 2 (0-indexed), so header=2
+            df_raw = pd.read_csv(p, encoding="utf-8-sig", header=2)
             break
 
     if df_raw is None:
