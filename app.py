@@ -6,7 +6,7 @@ import numpy as np
 # CONFIG & SETUP  (replace this whole section)
 # -----------------------------
 LEAGUE_AVG_ADJ   = 105.0
-HOME_EDGE_POINTS = 1.2
+HOME_EDGE_POINTS = 2.2
 ALPHA_SHRINK     = 0.12
 TOTAL_EDGE_TH    = 2.0
 SPREAD_EDGE_TH   = 1.5
