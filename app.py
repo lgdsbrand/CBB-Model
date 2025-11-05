@@ -18,18 +18,58 @@ POINT_SD         = 7.0
 # -----------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("Ken.csv", encoding="utf-8-sig")
-    df.columns = [c.strip() for c in df.columns]
-    # rename if needed
-    rename_map = {
-        "ORtg": "AdjO", "DRtg": "AdjD", "Tempo": "AdjT",
-        "OffRtg": "AdjO", "DefRtg": "AdjD"
-    }
-    for k,v in rename_map.items():
-        if k in df.columns and v not in df.columns:
-            df.rename(columns={k:v}, inplace=True)
-    keep = [c for c in ["Team","AdjO","AdjD","AdjT"] if c in df.columns]
-    return df[keep].dropna()
+    # Try all common paths
+    try_paths = ["Ken.csv", "data/Ken.csv"]
+
+    df_raw = None
+    for p in try_paths:
+        if Path(p).exists():
+            # Header is on row 1 (0-indexed), so header=1
+            df_raw = pd.read_csv(p, encoding="utf-8-sig", header=1)
+            break
+
+    if df_raw is None:
+        st.error("Could not find CSV. Make sure it's in the repo root or data/ folder.")
+        st.stop()
+
+    df_raw.columns = [c.strip() for c in df_raw.columns]
+
+    # Auto-detect Team column
+    team_col = None
+    for c in df_raw.columns:
+        c_norm = c.lower().replace(" ", "")
+        if c_norm in ["team","school","name","teamname"]:
+            team_col = c
+            break
+
+    if team_col is None:
+        st.error(f"Team column not found. Columns detected: {df_raw.columns.tolist()}")
+        st.stop()
+
+    # Find rating columns (AdjO / ORtg, AdjD / DRtg, Tempo/Pace)
+    def find(cols, names):
+        for n in names:
+            for c in cols:
+                if n == c.lower().replace(" ",""):
+                    return c
+        return None
+
+    adjo = find(df_raw.columns, ["orating","ortg","offrtg","adjo"])
+    adjd = find(df_raw.columns, ["drating","drtg","defrtg","adjd"])
+    adjt = find(df_raw.columns, ["tempo","pace","adjt","possessions"])
+
+    missing = [x for x,y in zip(["AdjO","AdjD","AdjT"],[adjo, adjd, adjt]) if y is None]
+    if missing:
+        st.error(f"Missing columns: {missing}. Found: {df_raw.columns.tolist()}")
+        st.stop()
+
+    df = df_raw[[team_col, adjo, adjd, adjt]].copy()
+    df.columns = ["Team","AdjO","AdjD","AdjT"]
+
+    for c in ["AdjO","AdjD","AdjT"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    return df.dropna()
 
 df = load_data()
 teams = sorted(df["Team"].unique())
