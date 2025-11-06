@@ -27,7 +27,7 @@ KENPOM_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E
 #                    MODEL CONFIG
 # =========================================================
 LEAGUE_AVG_ADJ   = 105.0   # per 100 possessions baseline
-HOME_EDGE_POINTS = 1.2     # home-court bump (points)
+HOME_EDGE_POINTS = 3.2     # home-court bump (points)
 ALPHA_SHRINK     = 0.12    # shrink PPP toward 1.00 (early season)
 
 TOTAL_EDGE_TH    = 2.0     # O/U play threshold (points)
