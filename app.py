@@ -11,17 +11,17 @@ import string
 # Each CSV must have:
 #   B = Team, C = 2025 value, H = 2024 value
 TR_URLS = {
-    "OFF_EFF": "",    # Offensive Efficiency (per 100 poss)
-    "DEF_EFF": "",    # Defensive Efficiency (per 100 poss)
-    "OFF_REB": "",    # Offensive Rebounding %
-    "DEF_REB": "",    # Defensive Rebounding %
-    "TOV_POSS": "",   # Turnovers per possession (offense) -- higher is worse
-    "OFF_EFG": "",    # Offensive eFG% (0-1 or 0-100)
+    "OFF_EFF": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1940805537&single=true&output=csv",    # Offensive Efficiency (per 100 poss)
+    "DEF_EFF": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=2137299930&single=true&output=csv",    # Defensive Efficiency (per 100 poss)
+    "OFF_REB": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=922672560&single=true&output=csv",    # Offensive Rebounding %
+    "DEF_REB": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=312492729&single=true&output=csv",    # Defensive Rebounding %
+    "TOV_POSS": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=993087389&single=true&output=csv",   # Turnovers per possession (offense) -- higher is worse
+    "OFF_EFG": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=803704968&single=true&output=csv",    # Offensive eFG% (0-1 or 0-100)
     # "DEF_EFG": "",   # (Optional) If you have a defensive eFG% CSV, put it here and add to build/merge below
 }
 
 # Optional: KenPom CSV (Publish-to-Web link). If left blank, we use sidebar override or local Ken.csv.
-KENPOM_URL = ""  # e.g. "https://docs.google.com/spreadsheets/d/.../export?format=csv"
+KENPOM_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=351220539&single=true&output=csv"  # e.g. "https://docs.google.com/spreadsheets/d/.../export?format=csv"
 
 # =========================================================
 #                    MODEL CONFIG
