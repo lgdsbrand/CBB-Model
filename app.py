@@ -1,123 +1,323 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+import string
 
-# =========================
-# CONFIG & MODEL SETTINGS
-# =========================
+# =========================================================
+#                  PASTE YOUR URLS HERE
+# =========================================================
+# Each CSV must have:
+#   B = Team, C = 2025 value, H = 2024 value
+TR_URLS = {
+    "OFF_EFF": "",    # Offensive Efficiency (per 100 poss)
+    "DEF_EFF": "",    # Defensive Efficiency (per 100 poss)
+    "OFF_REB": "",    # Offensive Rebounding %
+    "DEF_REB": "",    # Defensive Rebounding %
+    "TOV_POSS": "",   # Turnovers per possession (offense) -- higher is worse
+    "OFF_EFG": "",    # Offensive eFG% (0-1 or 0-100)
+    # "DEF_EFG": "",   # (Optional) If you have a defensive eFG% CSV, put it here and add to build/merge below
+}
+
+# Optional: KenPom CSV (Publish-to-Web link). If left blank, we use sidebar override or local Ken.csv.
+KENPOM_URL = ""  # e.g. "https://docs.google.com/spreadsheets/d/.../export?format=csv"
+
+# =========================================================
+#                    MODEL CONFIG
+# =========================================================
 LEAGUE_AVG_ADJ   = 105.0   # per 100 possessions baseline
-HOME_EDGE_POINTS = 3.0     # home-court bump (points)
-ALPHA_SHRINK     = 0.12    # slight shrink of PPP toward 1.00 early season
+HOME_EDGE_POINTS = 1.2     # home-court bump (points)
+ALPHA_SHRINK     = 0.12    # shrink PPP toward 1.00 (early season)
 
-# Betting recommendation thresholds
-TOTAL_EDGE_TH    = 2.0     # fire O/U if model total differs by >= 2.0
-SPREAD_EDGE_TH   = 1.5     # fire spread if edge vs line >= 1.5
+TOTAL_EDGE_TH    = 2.0     # O/U play threshold (points)
+SPREAD_EDGE_TH   = 1.5     # spread play threshold (points)
 
-# Monte Carlo controls (separate variance sources)
-N_SIMS           = 8000    # number of simulations
-POSS_SD          = 4.5     # SD of possessions (per game)
+# Monte Carlo (separate variance sources)
+N_SIMS           = 8000
+POSS_SD          = 4.5     # SD of game possessions
 PPP_SD           = 0.055   # SD of points-per-possession
 
-# =========================
-# DATA LOADER (Options 1–3)
-# =========================
-@st.cache_data(ttl=600)  # cache for 10 minutes; hit Refresh to clear
-def load_data(csv_url_from_sidebar: str = "") -> pd.DataFrame:
+# Four-factor-ish weights for multipliers (we're omitting FT rate)
+W_EFG = 0.40
+W_TOV = 0.25
+W_REB = 0.20
+
+# Blend weight between seasons (C=2025, H=2024)
+W_2025 = 0.50
+W_2024 = 0.50
+
+# =========================================================
+#              GENERAL HELPERS / UTILITIES
+# =========================================================
+def col_letter_to_index(letter: str) -> int:
+    """Convert Excel/Sheets column letters to 0-based index."""
+    if not letter:
+        return None
+    s = letter.strip().upper()
+    val = 0
+    for ch in s:
+        if ch not in string.ascii_uppercase:
+            return None
+        val = val * 26 + (ord(ch) - ord('A') + 1)
+    return val - 1
+
+TEAM_COL_LETTER = "B"
+COL_2025_LETTER = "C"
+COL_2024_LETTER = "H"
+
+TEAM_IDX  = col_letter_to_index(TEAM_COL_LETTER)
+IDX_2025  = col_letter_to_index(COL_2025_LETTER)
+IDX_2024  = col_letter_to_index(COL_2024_LETTER)
+
+def _read_tr_csv(url: str) -> pd.DataFrame:
+    df = pd.read_csv(url)
+    # Pick the columns we need by index
+    keep = []
+    for idx in [TEAM_IDX, IDX_2025, IDX_2024]:
+        if idx is not None and 0 <= idx < df.shape[1]:
+            keep.append(idx)
+        else:
+            raise ValueError(f"CSV does not have required column at index {idx}. Check letters B/C/H.")
+    out = df.iloc[:, keep].copy()
+    out.columns = ["Team", "v2025", "v2024"]
+    return out
+
+def _coerce_percent(s: pd.Series) -> pd.Series:
+    """Turn '52.3' into 0.523; leave '0.523' as is."""
+    s = pd.to_numeric(s, errors="coerce")
+    if s.dropna().mean() > 1.0:
+        s = s / 100.0
+    return s
+
+def _blend_two_cols(v25: pd.Series, v24: pd.Series, w25=W_2025, w24=W_2024) -> pd.Series:
+    v25 = pd.to_numeric(v25, errors="coerce")
+    v24 = pd.to_numeric(v24, errors="coerce")
+    return (w25 * v25) + (w24 * v24)
+
+# =========================================================
+#                  KENPOM LOADER
+# =========================================================
+@st.cache_data(ttl=600)
+def load_kp(url_override: str = "") -> pd.DataFrame:
     """
-    Tries 1) Secrets URL, 2) Sidebar URL, 3) Local CSV.
-    Returns dataframe with columns: Team, AdjO, AdjD, AdjT (numeric).
+    KenPom-like efficiencies:
+    Priority: 1) KENPOM_URL (above), 2) url_override (sidebar), 3) local Ken.csv or data/Ken.csv (header=1)
+    Needs columns: Team, ORtg/AdjO, DRtg/AdjD, AdjT/Tempo
+    Returns: Team, AdjO, AdjD, AdjT
     """
-    # 1) Secrets URL (Google Sheets 'Publish to web' CSV)
-    url = st.secrets.get("https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=351220539&single=true&output=csv", "").strip() if "KENPOM_CSV_URL" in st.secrets else ""
+    url = KENPOM_URL.strip() or url_override.strip()
     if url:
         df_raw = pd.read_csv(url)
     else:
-        # 2) Sidebar URL override
-        if csv_url_from_sidebar:
-            df_raw = pd.read_csv(csv_url_from_sidebar)
-        else:
-            # 3) Local CSV fallback in repo (header row is Row 2 -> header=1)
-            df_raw = None
-            for p in ["Ken.csv", "data/Ken.csv"]:
-                if Path(p).exists():
-                    df_raw = pd.read_csv(p, encoding="utf-8-sig", header=1)
-                    break
-            if df_raw is None:
-                raise FileNotFoundError(
-                    "CSV not found. Provide KENPOM_CSV_URL in secrets, paste a CSV URL in the sidebar, "
-                    "or add Ken.csv (or data/Ken.csv) to the repo."
-                )
+        # Local fallback
+        df_raw = None
+        for p in ["Ken.csv", "data/Ken.csv"]:
+            if Path(p).exists():
+                df_raw = pd.read_csv(p, encoding="utf-8-sig", header=1)
+                break
+        if df_raw is None:
+            raise FileNotFoundError(
+                "KenPom CSV not found. Set KENPOM_URL at top, paste a URL in sidebar, "
+                "or add Ken.csv (or data/Ken.csv) with headers on row 2."
+            )
 
-    # Normalize headers and map common names
     df_raw.columns = [c.strip() for c in df_raw.columns]
-    rename_map = {}
-    if "ORtg" in df_raw.columns and "AdjO" not in df_raw.columns:
-        rename_map["ORtg"] = "AdjO"
-    if "DRtg" in df_raw.columns and "AdjD" not in df_raw.columns:
-        rename_map["DRtg"] = "AdjD"
-    if "Tempo" in df_raw.columns and "AdjT" not in df_raw.columns:
-        rename_map["Tempo"] = "AdjT"
-    if rename_map:
-        df_raw = df_raw.rename(columns=rename_map)
+    # Map aliases
+    rename = {}
+    if "ORtg" in df_raw.columns and "AdjO" not in df_raw.columns: rename["ORtg"] = "AdjO"
+    if "DRtg" in df_raw.columns and "AdjD" not in df_raw.columns: rename["DRtg"] = "AdjD"
+    if "Tempo" in df_raw.columns and "AdjT" not in df_raw.columns: rename["Tempo"] = "AdjT"
+    if rename: df_raw = df_raw.rename(columns=rename)
 
-    required = {"Team", "AdjO", "AdjD", "AdjT"}
+    required = {"Team","AdjO","AdjD","AdjT"}
     if not required.issubset(df_raw.columns):
-        raise ValueError(f"Missing required columns {required}. Found: {list(df_raw.columns)}")
+        raise ValueError(f"KenPom missing columns {required}. Found: {list(df_raw.columns)}")
 
-    df = df_raw[["Team", "AdjO", "AdjD", "AdjT"]].copy()
-    for c in ["AdjO", "AdjD", "AdjT"]:
+    df = df_raw[["Team","AdjO","AdjD","AdjT"]].copy()
+    for c in ["AdjO","AdjD","AdjT"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df.dropna()
 
-    df = df.dropna(subset=["Team", "AdjO", "AdjD", "AdjT"])
-    return df
+# =========================================================
+#          TEAMRANKINGS: 6 URLS -> MERGED DATAFRAME
+# =========================================================
+@st.cache_data(ttl=600)
+def load_tr_six(urls: dict) -> pd.DataFrame:
+    """
+    Loads six CSVs (same structure B=Team, C=2025, H=2024) and blends into a single table:
+      Team, OFF_EFF, DEF_EFF, OFF_REB, DEF_REB, TOV_POSS, OFF_EFG [, DEF_EFG]
+    Values auto-converted to fractions for % where appropriate (REB%, eFG%).
+    """
+    frames = {}
+    for key, u in urls.items():
+        if not u:
+            continue
+        df = _read_tr_csv(u)
+        # Detect percent-y stats: REB% and EFG% -> normalize to 0..1
+        if key in ["OFF_REB","DEF_REB","OFF_EFG","DEF_EFG"]:
+            df["v2025"] = _coerce_percent(df["v2025"])
+            df["v2024"] = _coerce_percent(df["v2024"])
 
-# =========================
-# MODEL HELPERS
-# =========================
-def lookup(df, team):
-    row = df[df["Team"].str.lower() == team.lower()]
+        # Blend 2025 & 2024
+        df[key] = _blend_two_cols(df["v2025"], df["v2024"])
+        frames[key] = df[["Team", key]].copy()
+        frames[key]["_team_key"] = frames[key]["Team"].astype(str).str.lower()
+
+    if not frames:
+        # No TR data provided; return empty shell
+        cols = ["Team","OFF_EFF","DEF_EFF","OFF_REB","DEF_REB","TOV_POSS","OFF_EFG"]
+        return pd.DataFrame(columns=cols)
+
+    # Merge on _team_key across all present frames
+    merged = None
+    for key, f in frames.items():
+        if merged is None:
+            merged = f
+        else:
+            merged = pd.merge(merged, f, on=["_team_key"], how="outer", suffixes=("", f"_{key.lower()}"))
+
+    # Reconstruct a single Team col (prefer first non-null Team)
+    if "Team_x" in merged.columns or "Team_y" in merged.columns:
+        candidates = [c for c in merged.columns if c.startswith("Team")]
+        merged["Team"] = None
+        for c in candidates:
+            merged["Team"] = merged["Team"].combine_first(merged[c])
+        merged.drop(columns=candidates, inplace=True)
+    # else: already has "Team" from the first frame
+
+    # Ensure all expected stat columns exist
+    for c in ["OFF_EFF","DEF_EFF","OFF_REB","DEF_REB","TOV_POSS","OFF_EFG"]:
+        if c not in merged.columns:
+            merged[c] = np.nan
+
+    merged = merged[["_team_key","Team","OFF_EFF","DEF_EFF","OFF_REB","DEF_REB","TOV_POSS","OFF_EFG"]].copy()
+
+    # League averages (used for multipliers fallback)
+    lg_avgs = {
+        "OFF_EFF": float(pd.to_numeric(merged["OFF_EFF"], errors="coerce").dropna().mean()) if "OFF_EFF" in merged else 105.0,
+        "DEF_EFF": float(pd.to_numeric(merged["DEF_EFF"], errors="coerce").dropna().mean()) if "DEF_EFF" in merged else 105.0,
+        "OFF_REB": float(pd.to_numeric(merged["OFF_REB"], errors="coerce").dropna().mean()) if "OFF_REB" in merged else 0.30,
+        "DEF_REB": float(pd.to_numeric(merged["DEF_REB"], errors="coerce").dropna().mean()) if "DEF_REB" in merged else 0.70,
+        "TOV_POSS": float(pd.to_numeric(merged["TOV_POSS"], errors="coerce").dropna().mean()) if "TOV_POSS" in merged else 0.18,
+        "OFF_EFG": float(pd.to_numeric(merged["OFF_EFG"], errors="coerce").dropna().mean()) if "OFF_EFG" in merged else 0.51,
+    }
+    # Fill obvious fallbacks if NaN
+    for k, v in lg_avgs.items():
+        if not np.isfinite(v):
+            if k in ["OFF_EFF","DEF_EFF"]: lg_avgs[k] = 105.0
+            elif k == "TOV_POSS": lg_avgs[k] = 0.18
+            elif k == "OFF_REB": lg_avgs[k] = 0.30
+            elif k == "DEF_REB": lg_avgs[k] = 0.70
+            else: lg_avgs[k] = 0.51
+
+    return merged, lg_avgs
+
+def _lookup_row(df, team):
+    row = df[df["_team_key"] == team.lower()]
     if row.empty:
-        row = df[df["Team"].str.lower().str.contains(team.lower(), na=False)]
+        row = df[df["Team"].astype(str).str.lower().str.contains(team.lower(), na=False)]
     if row.empty:
-        raise ValueError(f"Team '{team}' not found.")
-    r = row.iloc[0]
-    return float(r["AdjO"]), float(r["AdjD"]), float(r["AdjT"])
+        return None
+    return row.iloc[0]
 
-def project_scores(df, away, home):
-    """Deterministic baseline (for reference only)."""
-    AdjO_A, AdjD_A, AdjT_A = lookup(df, away)
-    AdjO_H, AdjD_H, AdjT_H = lookup(df, home)
+# =========================================================
+#              BASELINES & MONTE CARLO
+# =========================================================
+def lookup_kp(df_kp, team):
+    row = df_kp[df_kp["Team"].str.lower() == team.lower()]
+    if row.empty:
+        row = df_kp[df_kp["Team"].str.lower().str.contains(team.lower(), na=False)]
+    if row.empty:
+        raise ValueError(f"Team '{team}' not found in KenPom data.")
+    return row.iloc[0]
 
-    poss = 0.5 * (AdjT_A + AdjT_H)
-    poss = 68 + (poss - 68) * 0.5  # damp toward 68
+def _base_params(df_kp, df_tr, lg_avgs, away, home):
+    A = lookup_kp(df_kp, away)
+    H = lookup_kp(df_kp, home)
 
-    off_A = ((AdjO_A + AdjD_H) / 2 - LEAGUE_AVG_ADJ) * (1 - ALPHA_SHRINK) + LEAGUE_AVG_ADJ
-    off_H = ((AdjO_H + AdjD_A) / 2 - LEAGUE_AVG_ADJ) * (1 - ALPHA_SHRINK) + LEAGUE_AVG_ADJ
-
-    score_A = off_A * poss / 100.0
-    score_H = off_H * poss / 100.0 + HOME_EDGE_POINTS
-    return score_A, score_H
-
-def _base_params(df, away, home):
-    AdjO_A, AdjD_A, AdjT_A = lookup(df, away)
-    AdjO_H, AdjD_H, AdjT_H = lookup(df, home)
-
-    poss = 0.5 * (AdjT_A + AdjT_H)
+    poss = 0.5 * (A["AdjT"] + H["AdjT"])
     poss = 68 + (poss - 68) * 0.5
 
-    off_A = ((AdjO_A + AdjD_H) / 2 - LEAGUE_AVG_ADJ) * (1 - ALPHA_SHRINK) + LEAGUE_AVG_ADJ
-    off_H = ((AdjO_H + AdjD_A) / 2 - LEAGUE_AVG_ADJ) * (1 - ALPHA_SHRINK) + LEAGUE_AVG_ADJ
-
+    # KenPom baseline PPP (vs opponent)
+    off_A = ((A["AdjO"] + H["AdjD"]) / 2 - LEAGUE_AVG_ADJ) * (1 - ALPHA_SHRINK) + LEAGUE_AVG_ADJ
+    off_H = ((H["AdjO"] + A["AdjD"]) / 2 - LEAGUE_AVG_ADJ) * (1 - ALPHA_SHRINK) + LEAGUE_AVG_ADJ
     ppp_A = off_A / 100.0
     ppp_H = off_H / 100.0
-    return poss, ppp_A, ppp_H
 
-def mc_distribution(df, away, home, n_sims=N_SIMS):
-    """Monte Carlo using separate variance for possessions and PPP."""
-    poss, ppp_A, ppp_H = _base_params(df, away, home)
+    # ---- TeamRankings multipliers (optional) ----
+    if df_tr is not None and not isinstance(df_tr, tuple):
+        # support (df, lg) if wrong unpacking happens
+        pass
+
+    if isinstance(df_tr, tuple):   # (df, lg)
+        df_tr, lg_avgs = df_tr
+
+    off_mult_A, def_mult_A = 1.0, 1.0
+    off_mult_H, def_mult_H = 1.0, 1.0
+    if df_tr is not None:
+        rA = _lookup_row(df_tr, away)
+        rH = _lookup_row(df_tr, home)
+
+        # Pull with fallbacks if missing
+        def get(r, name, default):
+            if r is None: return default
+            v = r.get(name, np.nan)
+            v = float(v) if np.isfinite(v) else default
+            return v
+
+        # Offensive side uses OFF_EFF, OFF_EFG, OFF_REB, TOV_POSS
+        A_OFF_EFF = get(rA, "OFF_EFF", lg_avgs["OFF_EFF"])
+        A_OFF_EFG = get(rA, "OFF_EFG", lg_avgs["OFF_EFG"])
+        A_OFF_REB = get(rA, "OFF_REB", lg_avgs["OFF_REB"])
+        A_TOV     = get(rA, "TOV_POSS", lg_avgs["TOV_POSS"])
+
+        H_DEF_EFF = get(rH, "DEF_EFF", lg_avgs["DEF_EFF"])
+        H_DEF_REB = get(rH, "DEF_REB", lg_avgs["DEF_REB"])
+        # If you add DEF_EFG to TR_URLS, you can pull it here. For now we proxy with DEF_EFF.
+
+        # Build multipliers (offense × opponent defense)
+        # Efficiency anchors (sqrt to keep from overpowering four-factors)
+        eff_anchor_A = max(A_OFF_EFF, 1e-6) / max(lg_avgs["OFF_EFF"], 1e-6)
+        eff_anchor_H = max(lg_avgs["DEF_EFF"], 1e-6) / max(H_DEF_EFF, 1e-6)
+
+        off_mult_A = (eff_anchor_A ** 0.5) \
+                   * ((A_OFF_EFG / max(lg_avgs["OFF_EFG"],1e-6)) ** W_EFG) \
+                   * (((1.0 - A_TOV) / max(1e-6, 1.0 - lg_avgs["TOV_POSS"])) ** W_TOV) \
+                   * ((A_OFF_REB / max(lg_avgs["OFF_REB"],1e-6)) ** W_REB)
+
+        def_mult_H = (eff_anchor_H ** 0.5) \
+                   * ((H_DEF_REB / max(lg_avgs["DEF_REB"],1e-6)) ** W_REB)
+        # Note: if you add DEF_EFG, include a term like (lg_avg_DEF_EFG / H_DEF_EFG) ** W_EFG
+
+        # Mirror for home offense vs away defense
+        H_OFF_EFF = get(rH, "OFF_EFF", lg_avgs["OFF_EFF"])
+        H_OFF_EFG = get(rH, "OFF_EFG", lg_avgs["OFF_EFG"])
+        H_OFF_REB = get(rH, "OFF_REB", lg_avgs["OFF_REB"])
+        H_TOV     = get(rH, "TOV_POSS", lg_avgs["TOV_POSS"])
+
+        A_DEF_EFF = get(rA, "DEF_EFF", lg_avgs["DEF_EFF"])
+        A_DEF_REB = get(rA, "DEF_REB", lg_avgs["DEF_REB"])
+
+        eff_anchor_Hoff = max(H_OFF_EFF, 1e-6) / max(lg_avgs["OFF_EFF"], 1e-6)
+        eff_anchor_Adef = max(lg_avgs["DEF_EFF"], 1e-6) / max(A_DEF_EFF, 1e-6)
+
+        off_mult_H = (eff_anchor_Hoff ** 0.5) \
+                   * ((H_OFF_EFG / max(lg_avgs["OFF_EFG"],1e-6)) ** W_EFG) \
+                   * (((1.0 - H_TOV) / max(1e-6, 1.0 - lg_avgs["TOV_POSS"])) ** W_TOV) \
+                   * ((H_OFF_REB / max(lg_avgs["OFF_REB"],1e-6)) ** W_REB)
+
+        def_mult_A = (eff_anchor_Adef ** 0.5) \
+                   * ((A_DEF_REB / max(lg_avgs["DEF_REB"],1e-6)) ** W_REB)
+
+    # Apply multipliers to PPP
+    ppp_A_mod = ppp_A * off_mult_A * def_mult_H
+    ppp_H_mod = ppp_H * off_mult_H * def_mult_A
+
+    return poss, ppp_A_mod, ppp_H_mod
+
+def mc_distribution(df_kp, df_tr, lg_avgs, away, home, n_sims=N_SIMS):
+    poss, ppp_A, ppp_H = _base_params(df_kp, df_tr, lg_avgs, away, home)
     sim_poss = np.maximum(50, np.random.normal(poss, POSS_SD, n_sims))
     sim_pppA = np.random.normal(ppp_A, PPP_SD, n_sims)
     sim_pppH = np.random.normal(ppp_H, PPP_SD, n_sims)
@@ -129,16 +329,16 @@ def confidence_from_edge(edge, hi_edge=6.0):
     e = min(abs(edge) / hi_edge, 1.0)
     return int(round(1 + 9 * e))  # 1..10
 
-# =========================
-# SAVE-ROW HELPER
-# =========================
-def compute_projection_row(df, away, home, book_home_spread, book_total):
-    base_A, base_H = project_scores(df, away, home)
-    sim_A, sim_H = mc_distribution(df, away, home)
+# =========================================================
+#           SAVE-ROW + STACKED CARD OUTPUT
+# =========================================================
+def compute_projection_row(df_kp, df_tr_pair, away, home, book_home_spread, book_total):
+    df_tr, lg_avgs = df_tr_pair if isinstance(df_tr_pair, tuple) else (None, None)
+    sim_A, sim_H = mc_distribution(df_kp, df_tr, lg_avgs, away, home)
     score_A = float(sim_A.mean())
     score_H = float(sim_H.mean())
     model_total = score_A + score_H
-    model_spread_home = score_H - score_A  # + means home by X
+    model_spread_home = score_H - score_A
     home_win = float((sim_H > sim_A).mean())
     away_win = 1.0 - home_win
 
@@ -146,12 +346,9 @@ def compute_projection_row(df, away, home, book_home_spread, book_total):
     book_home_edge = -book_home_spread
     spread_edge = model_spread_home - book_home_edge
 
-    if total_edge >= TOTAL_EDGE_TH:
-        total_play = f"OVER {book_total:.1f}"
-    elif total_edge <= -TOTAL_EDGE_TH:
-        total_play = f"UNDER {book_total:.1f}"
-    else:
-        total_play = "NO BET"
+    total_play = "NO BET"
+    if total_edge >= TOTAL_EDGE_TH: total_play = f"OVER {book_total:.1f}"
+    elif total_edge <= -TOTAL_EDGE_TH: total_play = f"UNDER {book_total:.1f}"
 
     if spread_edge >= SPREAD_EDGE_TH:
         spread_play = f"{home} {book_home_spread:+.1f}"
@@ -180,37 +377,22 @@ def compute_projection_row(df, away, home, book_home_spread, book_total):
         "Confidence (1-10)": conf,
     }
 
-# =========================
-# STACKED CARD OUTPUT
-# =========================
-def stacked_summary(df, away, home, book_home_spread, book_total):
-    # Baseline & MC
-    base_A, base_H = project_scores(df, away, home)
-    sim_A, sim_H = mc_distribution(df, away, home)
-
-    score_A = float(sim_A.mean())
-    score_H = float(sim_H.mean())
+def stacked_summary(df_kp, df_tr_pair, away, home, book_home_spread, book_total):
+    df_tr, lg_avgs = df_tr_pair if isinstance(df_tr_pair, tuple) else (None, None)
+    sim_A, sim_H = mc_distribution(df_kp, df_tr, lg_avgs, away, home)
+    score_A = float(sim_A.mean()); score_H = float(sim_H.mean())
     total   = score_A + score_H
-    spreadH = score_H - score_A  # + means home by X
-
-    # Ranges (25–75%)
+    spreadH = score_H - score_A
     qA_lo, qA_hi = np.percentile(sim_A, [25, 75])
     qH_lo, qH_hi = np.percentile(sim_H, [25, 75])
+    home_win = float((sim_H > sim_A).mean()); away_win = 1.0 - home_win
 
-    # Win probabilities
-    home_win = float((sim_H > sim_A).mean())
-    away_win = 1.0 - home_win
-
-    # Plays
     total_edge = total - book_total
-    total_play = "NO BET"
-    if total_edge >= TOTAL_EDGE_TH:
-        total_play = f"OVER {book_total:.1f}"
-    elif total_edge <= -TOTAL_EDGE_TH:
-        total_play = f"UNDER {book_total:.1f}"
-
     book_home_edge = -book_home_spread
     spread_edge = spreadH - book_home_edge
+    total_play = "NO BET"
+    if total_edge >= TOTAL_EDGE_TH: total_play = f"OVER {book_total:.1f}"
+    elif total_edge <= -TOTAL_EDGE_TH: total_play = f"UNDER {book_total:.1f}"
     if spread_edge >= SPREAD_EDGE_TH:
         spread_play = f"{home} {book_home_spread:+.1f}"
     elif spread_edge <= -SPREAD_EDGE_TH:
@@ -218,7 +400,6 @@ def stacked_summary(df, away, home, book_home_spread, book_total):
     else:
         spread_play = "NO BET"
 
-    # Winner / margin
     if score_H >= score_A:
         winner = home
         win_line = f"{home} {int(round(score_H))} – {away} {int(round(score_A))}"
@@ -231,7 +412,6 @@ def stacked_summary(df, away, home, book_home_spread, book_total):
     conf = confidence_from_edge(max(abs(total_edge), abs(spread_edge)))
     conf_pct = conf / 10.0
 
-    # Stacked card (no horizontal scroll)
     st.subheader(f"{away} @ {home}")
     st.markdown(
         f"""
@@ -250,39 +430,40 @@ def stacked_summary(df, away, home, book_home_spread, book_total):
     st.markdown("**Prediction Confidence:**")
     st.progress(conf_pct)
 
-# =========================
-# STREAMLIT UI
-# =========================
-st.title("🏀 College Basketball Projection Model")
+# =========================================================
+#                           UI
+# =========================================================
+st.title("🏀 CBB Projection — KenPom + TeamRankings (6 URLs in code)")
 
-# Sidebar: data source + refresh + show settings
 with st.sidebar:
-    st.markdown("### Data Source")
-    csv_url_input = st.text_input(
-        "CSV URL (optional)",
-        placeholder="Paste Google Sheets 'Publish to web' CSV link"
-    )
-    if st.button("🔄 Refresh data"):
-        load_data.clear()
-        st.experimental_rerun()
+    kp_url_override = st.text_input("KenPom CSV URL (optional override)", value="")
+    st.caption("If blank, the script will use KENPOM_URL (top of file) or local Ken.csv.")
     st.markdown("---")
-    st.markdown("### Model Settings")
-    st.write(f"Possession SD: **{POSS_SD}**")
-    st.write(f"PPP SD: **{PPP_SD}**")
-    st.write(f"Simulations: **{N_SIMS}**")
+    st.write(f"Blend Weights – 2025: **{W_2025:.2f}**, 2024: **{W_2024:.2f}**")
+    st.write(f"Possession SD: **{POSS_SD}** | PPP SD: **{PPP_SD}** | Sims: **{N_SIMS}**")
+    if st.button("🔄 Refresh data"):
+        load_kp.clear(); load_tr_six.clear()
+        st.experimental_rerun()
 
-# Load data
+# Load KenPom
 try:
-    df = load_data(csv_url_input.strip())
+    df_kp = load_kp(kp_url_override)
 except Exception as e:
-    st.error(f"Data load error: {e}")
+    st.error(f"KenPom load error: {e}")
     st.stop()
+
+# Load TeamRankings (six URLs you pasted at top)
+try:
+    df_tr_raw, lg_avgs = load_tr_six(TR_URLS)
+except Exception as e:
+    st.warning(f"TR load warning (model will run without TR multipliers): {e}")
+    df_tr_raw, lg_avgs = None, None
 
 # Session storage for saved table
 if "saved_rows" not in st.session_state:
     st.session_state.saved_rows = []
 
-teams = sorted(df["Team"].unique())
+teams = sorted(df_kp["Team"].unique())
 col1, col2 = st.columns(2)
 away_team = col1.selectbox("Away Team", teams, index=0)
 home_team = col2.selectbox("Home Team", teams, index=1)
@@ -290,27 +471,27 @@ home_team = col2.selectbox("Home Team", teams, index=1)
 book_spread = st.text_input("Home Spread (negative if home favored):", "-5.0")
 book_total  = st.text_input("Book Total:", "145.0")
 
-col_run, col_save = st.columns(2)
-run  = col_run.button("Run Projection")
-save = col_save.button("Save to Table")
+c1, c2 = st.columns(2)
+run  = c1.button("Run Projection")
+save = c2.button("Save to Table")
 
 if run or save:
     try:
         book_spread_val = float(book_spread)
         book_total_val  = float(book_total)
 
-        # Show stacked card
-        stacked_summary(df, away_team, home_team, book_spread_val, book_total_val)
+        # Stacked card
+        stacked_summary(df_kp, (df_tr_raw, lg_avgs), away_team, home_team, book_spread_val, book_total_val)
 
         # Save row if requested
         if save:
-            row = compute_projection_row(df, away_team, home_team, book_spread_val, book_total_val)
+            row = compute_projection_row(df_kp, (df_tr_raw, lg_avgs), away_team, home_team, book_spread_val, book_total_val)
             st.session_state.saved_rows.append(row)
             st.success("Saved to table ✅")
     except Exception as e:
         st.error(f"Error: {e}")
 
-# Saved table section
+# Saved table
 st.markdown("---")
 st.subheader("📋 Saved Games")
 
