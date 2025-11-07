@@ -79,105 +79,99 @@ function coerceNum(x){
   const n=parseFloat(s); return Number.isFinite(n)?n:NaN;
 }
 
-/* ======= Robust KenPom header finder ======= */
-function cleanName(s){ return String(s||"").toLowerCase().replace(/\s+/g,"").replace(/[^\w]/g,""); }
-function findColIdx(headers,cands){
-  const H=headers.map(cleanName);
-  for(const c of cands){ const i=H.indexOf(c); if(i!==-1) return i; }
+// --- replace the old helpers + buildKP with these ---
+
+function cleanName(s) {
+  return String(s || "").toLowerCase().replace(/\s+/g, "").replace(/[^\w]/g, "");
+}
+
+// Try exact first, then "includes" fallback
+function findColIdxLoose(headers, candidates) {
+  const H = headers.map(cleanName);
+
+  // 1) exact
+  for (const c of candidates) {
+    const i = H.indexOf(c);
+    if (i !== -1) return i;
+  }
+  // 2) substring (handles things like "offensiverating(per100)" etc.)
+  for (let i = 0; i < H.length; i++) {
+    for (const c of candidates) {
+      if (H[i].includes(c)) return i;
+    }
+  }
   return -1;
 }
-function scoreHeaderRow(row){
-  const h=row.map(cleanName);
-  const needTeam = ["team","school","name"];
-  const needAdjO = ["adjo","offensiverating","ortg","adjoffense","offensiveratingper100","oef"];
-  const needAdjD = ["adjd","defensiverating","drtg","adjdefense","defensiveratingper100","def"];
-  const needAdjT = ["adjt","tempo","pace"];
-  let s=0;
-  if(needTeam.some(k=>h.includes(k))) s++;
-  if(needAdjO.some(k=>h.includes(k))) s++;
-  if(needAdjD.some(k=>h.includes(k))) s++;
-  if(needAdjT.some(k=>h.includes(k))) s++;
+
+function scoreHeaderRow(row) {
+  const h = row.map(cleanName);
+  const needTeam = ["team", "school", "name"];
+  const needAdjO = ["adjo", "ortg", "offensiverating", "adjoffense"];
+  const needAdjD = ["adjd", "drtg", "defensiverating", "adjdefense"];
+  const needAdjT = ["adjt", "tempo", "pace"];
+  let s = 0;
+  if (needTeam.some(k => h.includes(k))) s++;
+  if (needAdjO.some(k => h.includes(k))) s++;
+  if (needAdjD.some(k => h.includes(k))) s++;
+  if (needAdjT.some(k => h.includes(k))) s++;
   return s;
 }
-function buildKP(rows){
-  // Look at first 5 rows to find the header
-  let headerRow=0, bestScore=-1;
-  for(let r=0;r<Math.min(5,rows.length);r++){
-    const sc=scoreHeaderRow(rows[r]);
-    if(sc>bestScore){ bestScore=sc; headerRow=r; }
+
+// Strong numeric coercion
+function coerceNum(x) {
+  const s = String(x ?? "")
+    .replace(/[^0-9.+-]/g, "")
+    .replace(/^([+-])$/, "");
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function buildKP(rows) {
+  if (!rows || !rows.length) throw new Error("KenPom CSV is empty.");
+
+  // look deeper for the real header row (handles row 2 headers, repeated headers mid-sheet, etc.)
+  let headerRow = 0, best = -1;
+  const limit = Math.min(10, rows.length);
+  for (let r = 0; r < limit; r++) {
+    const sc = scoreHeaderRow(rows[r]);
+    if (sc > best) { best = sc; headerRow = r; }
   }
-  const header=rows[headerRow];
-  const startIdx=headerRow+1;
+  const header = rows[headerRow];
+  const startIdx = headerRow + 1;
 
-  const iTeam=findColIdx(header,["team","school","name"]);
-  const iAdjO=findColIdx(header,["adjo","offensiverating","ortg","adjoffense","offensiveratingper100"]);
-  const iAdjD=findColIdx(header,["adjd","defensiverating","drtg","adjdefense","defensiveratingper100"]);
-  const iAdjT=findColIdx(header,["adjt","tempo","pace"]);
+  const iTeam = findColIdxLoose(header, ["team", "school", "name"]);
+  const iAdjO = findColIdxLoose(header, ["adjo", "ortg", "offensiverating", "adjoffense"]);
+  const iAdjD = findColIdxLoose(header, ["adjd", "drtg", "defensiverating", "adjdefense"]);
+  const iAdjT = findColIdxLoose(header, ["adjt", "tempo", "pace"]);
 
-  if([iTeam,iAdjO,iAdjD,iAdjT].some(i=>i===-1)){
-    throw new Error("KenPom CSV missing Team/AdjO/AdjD/AdjT columns. Header row looked like: "+JSON.stringify(header));
+  if ([iTeam, iAdjO, iAdjD, iAdjT].some(i => i === -1)) {
+    throw new Error(
+      "KenPom header not recognized. Found: " + JSON.stringify(header)
+    );
   }
 
-  const out=[];
-  for(let r=startIdx;r<rows.length;r++){
-    const row=rows[r];
-    const Team=row[iTeam]; if(!Team) continue;
-    const AdjO=coerceNum(row[iAdjO]);
-    const AdjD=coerceNum(row[iAdjD]);
-    const AdjT=coerceNum(row[iAdjT]);
-    if([AdjO,AdjD,AdjT].every(Number.isFinite)){
-      out.push({Team,AdjO,AdjD,AdjT});
+  const out = [];
+  for (let r = startIdx; r < rows.length; r++) {
+    const row = rows[r];
+    // skip repeated header rows inside the data
+    if (row && row[0] && /rk/i.test(row[0])) continue;
+
+    const Team = row[iTeam];
+    if (!Team) continue;
+
+    const AdjO = coerceNum(row[iAdjO]);
+    const AdjD = coerceNum(row[iAdjD]);
+    const AdjT = coerceNum(row[iAdjT]);
+
+    if ([AdjO, AdjD, AdjT].every(Number.isFinite)) {
+      out.push({ Team, AdjO, AdjD, AdjT });
     }
   }
-  if(!out.length) throw new Error("KenPom parsed but produced 0 valid rows.");
+
+  if (!out.length) {
+    throw new Error("KenPom parsed but produced 0 valid rows (all NaN).");
+  }
   return out;
-}
-
-/* ======= TeamRankings (6 urls) ======= */
-function blend25_24(v25,v24,w25,w24){
-  const a=Number(v25), b=Number(v24);
-  const A=Number.isFinite(a)?a:NaN, B=Number.isFinite(b)?b:NaN;
-  if(Number.isNaN(A)&&Number.isNaN(B)) return NaN;
-  if(Number.isNaN(A)) return w24*B;
-  if(Number.isNaN(B)) return w25*A;
-  return w25*A+w24*B;
-}
-async function loadTR(urls,w25,w24){
-  const frames={};
-  for(const [key,url] of Object.entries(urls)){
-    if(!url) continue;
-    const rows=await fetchCSV(url);
-    const out=[];
-    for(let r=0;r<rows.length;r++){
-      const row=rows[r];
-      const team=row[TEAM_COL_INDEX];
-      const v25=row[VAL25_INDEX], v24=row[VAL24_INDEX];
-      if(!team) continue;
-      let a=v25,b=v24;
-      if(["OFF_REB","DEF_REB","OFF_EFG"].includes(key)){ a=percentify(a); b=percentify(b); }
-      else { a=Number(a); b=Number(b); }
-      out.push({Team:team, [key]:blend25_24(a,b,w25,w24), _team_key:teamKey(team)});
-    }
-    frames[key]=out;
-  }
-  const byKey=new Map();
-  for(const key of Object.keys(frames)){
-    for(const row of frames[key]){
-      if(!byKey.has(row._team_key)) byKey.set(row._team_key,{_team_key:row._team_key,Team:row.Team});
-      byKey.get(row._team_key)[key]=row[key];
-    }
-  }
-  const merged=Array.from(byKey.values());
-  const m=arr=>{const xs=arr.map(Number).filter(Number.isFinite); return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:NaN;};
-  const lg={
-    OFF_EFF:m(merged.map(r=>r.OFF_EFF))||105,
-    DEF_EFF:m(merged.map(r=>r.DEF_EFF))||105,
-    OFF_REB:m(merged.map(r=>r.OFF_REB))||0.30,
-    DEF_REB:m(merged.map(r=>r.DEF_REB))||0.70,
-    TOV_POSS:m(merged.map(r=>r.TOV_POSS))||0.18,
-    OFF_EFG:m(merged.map(r=>r.OFF_EFG))||0.51,
-  };
-  return {merged, lg};
 }
 
 /* ======= Deterministic params ======= */
