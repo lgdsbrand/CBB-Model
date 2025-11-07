@@ -13,7 +13,8 @@ const TR_URLS = {
   OFF_EFG:
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=803704968&single=true&output=csv",
 };
-// KenPom: headers on row 2 (header=1 equivalent), must include Team, AdjO, AdjD, AdjT (or ORtg/DRtg/Tempo aliases).
+
+// KenPom: headers may be on row 2 (header=1), must include Team, AdjO, AdjD, AdjT (or ORtg/DRtg/Tempo aliases).
 const KENPOM_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=351220539&single=true&output=csv";
 
@@ -23,7 +24,7 @@ const HOME_EDGE_POINTS = 3.0;
 const TOTAL_EDGE_TH = 2.0;
 const SPREAD_EDGE_TH = 1.5;
 const N_SIMS = 1000;
-const POSS_SD = 3.5; // slightly tighter for mobile speed
+const POSS_SD = 3.5; // tight for mobile
 const PPP_SD = 0.04;
 
 const W_EFG = 0.40;
@@ -51,11 +52,11 @@ const clearBtn = document.getElementById("clearBtn");
 
 /* ======= App State ======= */
 let KP = null; // [{Team, AdjO, AdjD, AdjT}]
-let TR = null; // merged map by _key
+let TR = null; // merged array by _team_key
 let LG = null; // league averages
 let savedGames = []; // persisted to localStorage
 
-/* ======= CSV Parser (handles quotes) ======= */
+/* ======= CSV Parser (handles quotes/newlines) ======= */
 function parseCSV(text) {
   const rows = [];
   let row = [];
@@ -107,13 +108,14 @@ async function fetchCSV(url) {
   return parseCSV(txt);
 }
 
-/* ======= Load KenPom (headers may be on row 2) ======= */
+/* ======= KenPom loader (robust) ======= */
 function normalizeKPHeader(cols) {
   return cols.map((c) => String(c || "").trim());
 }
+
+// Accept space variants: "Adj T" -> "AdjT"
 function aliasKPNames(cols) {
-  // Map ORtg->AdjO, DRtg->AdjD, Tempo->AdjT
-  const mapped = cols.slice();
+  const mapped = cols.slice().map((c) => c.replace(/\s+/g, ""));
   const iOR = mapped.indexOf("ORtg");
   if (iOR !== -1 && !mapped.includes("AdjO")) mapped[iOR] = "AdjO";
   const iDR = mapped.indexOf("DRtg");
@@ -122,30 +124,40 @@ function aliasKPNames(cols) {
   if (iT !== -1 && !mapped.includes("AdjT")) mapped[iT] = "AdjT";
   return mapped;
 }
+
 function indexOfCol(h, name) {
   return h.findIndex((x) => x === name);
 }
+
+// STRONG number coercion (strips everything except digits, sign, and dot)
 function coerceNum(x) {
-  return Number(String(x).replaceAll("+", "").replaceAll(",", "").trim());
+  const s = String(x ?? "")
+    .replace(/[^0-9.+-]/g, "")
+    .replace(/^([+-])$/, "");
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : NaN;
 }
+
 function rowHasKP(cols) {
   const req = ["Team", "AdjO", "AdjD", "AdjT"];
   return req.every((r) => cols.includes(r));
 }
+
 function buildKP(rows) {
-  // Try row0 header
+  // Try first row as header
   let header = normalizeKPHeader(rows[0] || []);
   header = aliasKPNames(header);
   let startIdx = 1;
+
+  // If not found, try second row as header (header=1)
   if (!rowHasKP(header) && rows.length > 1) {
-    // Try row1 header (header=1 in pandas)
     let header2 = normalizeKPHeader(rows[1] || []);
     header2 = aliasKPNames(header2);
     if (rowHasKP(header2)) {
       header = header2;
       startIdx = 2;
     } else {
-      // Try promote first data row as header (rare)
+      // Try promote first data row as header
       const promote = normalizeKPHeader(rows[0] || []);
       const p2 = aliasKPNames(promote);
       if (rowHasKP(p2)) {
@@ -154,11 +166,13 @@ function buildKP(rows) {
       }
     }
   }
+
   if (!rowHasKP(header)) {
     throw new Error(
       `KenPom CSV missing required columns. Found: ${JSON.stringify(header)}`
     );
   }
+
   const iTeam = indexOfCol(header, "Team");
   const iAdjO = indexOfCol(header, "AdjO");
   const iAdjD = indexOfCol(header, "AdjD");
@@ -179,14 +193,14 @@ function buildKP(rows) {
   return out;
 }
 
-/* ======= Load TeamRankings (6 urls, B/C/H) ======= */
+/* ======= TeamRankings loader (6 urls, B/C/H) ======= */
 function percentify(v) {
   if (v == null || v === "") return NaN;
   const n = Number(String(v).trim());
   if (!Number.isFinite(n)) return NaN;
-  // if looks like 52.3 -> 0.523
   return n > 1 ? n / 100 : n;
 }
+
 function blend25_24(v25, v24, w25, w24) {
   const a = Number(v25), b = Number(v24);
   const A = Number.isFinite(a) ? a : NaN;
@@ -196,6 +210,7 @@ function blend25_24(v25, v24, w25, w24) {
   if (Number.isNaN(B)) return w25 * A;
   return w25 * A + w24 * B;
 }
+
 function teamKey(t) {
   return String(t || "").toLowerCase().trim();
 }
@@ -243,30 +258,24 @@ async function loadTR(urls, w25, w24) {
   };
 
   const lg = {
-    OFF_EFF: numMean(merged.map((r) => r.OFF_EFF)),
-    DEF_EFF: numMean(merged.map((r) => r.DEF_EFF)),
-    OFF_REB: numMean(merged.map((r) => r.OFF_REB)),
-    DEF_REB: numMean(merged.map((r) => r.DEF_REB)),
-    TOV_POSS: numMean(merged.map((r) => r.TOV_POSS)),
-    OFF_EFG: numMean(merged.map((r) => r.OFF_EFG)),
+    OFF_EFF: numMean(merged.map((r) => r.OFF_EFF)) || 105,
+    DEF_EFF: numMean(merged.map((r) => r.DEF_EFF)) || 105,
+    OFF_REB: numMean(merged.map((r) => r.OFF_REB)) || 0.30,
+    DEF_REB: numMean(merged.map((r) => r.DEF_REB)) || 0.70,
+    TOV_POSS: numMean(merged.map((r) => r.TOV_POSS)) || 0.18,
+    OFF_EFG: numMean(merged.map((r) => r.OFF_EFG)) || 0.51,
   };
-  // sensible fallbacks
-  if (!Number.isFinite(lg.OFF_EFF)) lg.OFF_EFF = 105;
-  if (!Number.isFinite(lg.DEF_EFF)) lg.DEF_EFF = 105;
-  if (!Number.isFinite(lg.OFF_REB)) lg.OFF_REB = 0.30;
-  if (!Number.isFinite(lg.DEF_REB)) lg.DEF_REB = 0.70;
-  if (!Number.isFinite(lg.TOV_POSS)) lg.TOV_POSS = 0.18;
-  if (!Number.isFinite(lg.OFF_EFG)) lg.OFF_EFG = 0.51;
 
   return { merged, lg };
 }
 
-/* ======= Deterministic baseline + TR multipliers ======= */
+/* ======= Deterministic params + TR multipliers ======= */
 function findKP(team) {
   const k = teamKey(team);
   return KP.find((r) => teamKey(r.Team) === k) ||
          KP.find((r) => teamKey(r.Team).includes(k));
 }
+
 function findTR(team) {
   const k = teamKey(team);
   return TR.find((r) => r._team_key === k) ||
@@ -278,15 +287,12 @@ function baseParams(away, home) {
   const H = findKP(home);
   if (!A || !H) throw new Error("Team not found in KenPom.");
 
-  // No pace damping
   const poss = 0.5 * (A.AdjT + H.AdjT);
   const BASE_PPP = LEAGUE_AVG_ADJ / 100.0;
 
-  // Multiplicative PPP vs opponent
   let pppA = BASE_PPP * (A.AdjO / LEAGUE_AVG_ADJ) * (LEAGUE_AVG_ADJ / H.AdjD);
   let pppH = BASE_PPP * (H.AdjO / LEAGUE_AVG_ADJ) * (LEAGUE_AVG_ADJ / A.AdjD);
 
-  // Apply TR multipliers (damped so KP dominates)
   if (TR && LG) {
     const rA = findTR(away);
     const rH = findTR(home);
@@ -297,7 +303,7 @@ function baseParams(away, home) {
     const A_OFF_EFF = getv(rA, "OFF_EFF", LG.OFF_EFF);
     const A_OFF_EFG = getv(rA, "OFF_EFG", LG.OFF_EFG);
     const A_OFF_REB = getv(rA, "OFF_REB", LG.OFF_REB);
-    const A_TOV = getv(rA, "TOV_POSS", LG.TOV_POSS);
+    const A_TOV     = getv(rA, "TOV_POSS", LG.TOV_POSS);
 
     const H_DEF_EFF = getv(rH, "DEF_EFF", LG.DEF_EFF);
     const H_DEF_REB = getv(rH, "DEF_REB", LG.DEF_REB);
@@ -305,13 +311,12 @@ function baseParams(away, home) {
     const H_OFF_EFF = getv(rH, "OFF_EFF", LG.OFF_EFF);
     const H_OFF_EFG = getv(rH, "OFF_EFG", LG.OFF_EFG);
     const H_OFF_REB = getv(rH, "OFF_REB", LG.OFF_REB);
-    const H_TOV = getv(rH, "TOV_POSS", LG.TOV_POSS);
+    const H_TOV     = getv(rH, "TOV_POSS", LG.TOV_POSS);
 
     const A_DEF_EFF = getv(rA, "DEF_EFF", LG.DEF_EFF);
     const A_DEF_REB = getv(rA, "DEF_REB", LG.DEF_REB);
 
-    // Efficiency anchors (soft)
-    const eff_anchor_A = Math.max(A_OFF_EFF, 1e-6) / Math.max(LG.OFF_EFF, 1e-6);
+    const eff_anchor_A  = Math.max(A_OFF_EFF, 1e-6) / Math.max(LG.OFF_EFF, 1e-6);
     const eff_anchor_Hd = Math.max(LG.DEF_EFF, 1e-6) / Math.max(H_DEF_EFF, 1e-6);
     const eff_anchor_Ho = Math.max(H_OFF_EFF, 1e-6) / Math.max(LG.OFF_EFF, 1e-6);
     const eff_anchor_Ad = Math.max(LG.DEF_EFF, 1e-6) / Math.max(A_DEF_EFF, 1e-6);
@@ -336,7 +341,7 @@ function baseParams(away, home) {
       Math.pow(eff_anchor_Ad, 0.5) *
       Math.pow(A_DEF_REB / Math.max(LG.DEF_REB, 1e-6), W_REB);
 
-    const damp = 0.5;
+    const damp = 0.5; // keep KP as anchor
     pppA *= Math.pow(off_mult_A, damp) * Math.pow(def_mult_H, damp);
     pppH *= Math.pow(off_mult_H, damp) * Math.pow(def_mult_A, damp);
   }
@@ -344,14 +349,12 @@ function baseParams(away, home) {
   return { poss, pppA, pppH };
 }
 
-/* ======= Web Worker for Monte Carlo (via blob) ======= */
+/* ======= Web Worker for Monte Carlo ======= */
 const workerCode = `
 self.onmessage = (e) => {
   const { poss, pppA, pppH, homeEdge, nSims, possSD, pppSD } = e.data;
   function randn(mean, sd) {
-    // Box-Muller
-    const u = Math.random();
-    const v = Math.random();
+    const u = Math.random(), v = Math.random();
     const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2*Math.PI*v);
     return mean + sd * z;
   }
@@ -370,10 +373,7 @@ self.onmessage = (e) => {
     if (h > a) homeWins++;
   }
 
-  function mean(arr){
-    let s=0; for (let i=0;i<arr.length;i++) s+=arr[i];
-    return s/arr.length;
-  }
+  function mean(arr){ let s=0; for (let i=0;i<arr.length;i++) s+=arr[i]; return s/arr.length; }
   function quantile(arr, q){
     const a = Array.from(arr).sort((x,y)=>x-y);
     const idx = Math.max(0, Math.min(a.length-1, Math.floor(q*(a.length-1))));
@@ -388,9 +388,7 @@ self.onmessage = (e) => {
   self.postMessage({ mA, mH, qA25, qA75, qH25, qH75, homeWinPct });
 };
 `;
-const workerURL = URL.createObjectURL(
-  new Blob([workerCode], { type: "text/javascript" })
-);
+const workerURL = URL.createObjectURL(new Blob([workerCode], { type: "text/javascript" }));
 
 /* ======= Render helpers ======= */
 function badge(text, kind) {
@@ -427,9 +425,7 @@ function renderSaved() {
     "Home Win %","Away Win %","Confidence (1-10)"
   ];
   let thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>`;
-  let rows = savedGames.map(g => {
-    return `<tr>${cols.map(c => `<td>${g[c] ?? ""}</td>`).join("")}</tr>`;
-  }).join("");
+  let rows = savedGames.map(g => `<tr>${cols.map(c => `<td>${g[c] ?? ""}</td>`).join("")}</tr>`).join("");
   savedWrap.innerHTML = `<div class="tableWrap"><table>${thead}<tbody>${rows}</tbody></table></div>`;
 }
 function toCSV(arr) {
@@ -484,7 +480,6 @@ runBtn.addEventListener("click", () => {
       return;
     }
 
-    // Deterministic (instant) + start MC worker
     const { poss, pppA, pppH } = baseParams(away, home);
     const detAway = pppA * poss;
     const detHome = pppH * poss + HOME_EDGE_POINTS;
@@ -500,7 +495,7 @@ runBtn.addEventListener("click", () => {
     resultsSec.classList.remove("hidden");
     saveBtn.disabled = true;
 
-    // Spawn worker
+    // Monte Carlo in worker
     const worker = new Worker(workerURL);
     worker.postMessage({
       poss, pppA, pppH,
@@ -516,7 +511,7 @@ runBtn.addEventListener("click", () => {
       const modelSpreadHome = mH - mA;
 
       const totalEdge = modelTotal - Number(totalInput.value);
-      const bookHomeEdge = -Number(spreadInput.value);
+      const bookHomeEdge = -Number(spreadInput.value); // convert book's "home -x" to model sign
       const spreadEdge = modelSpreadHome - bookHomeEdge;
 
       let totalPlay = "NO BET";
@@ -532,7 +527,6 @@ runBtn.addEventListener("click", () => {
       }
 
       const conf = confFromEdge(Math.max(Math.abs(totalEdge), Math.abs(spreadEdge)));
-
       const winner = mH >= mA ? homeSel.value : awaySel.value;
       const line = mH >= mA
         ? `${homeSel.value} ${Math.round(mH)} – ${awaySel.value} ${Math.round(mA)}`
@@ -542,7 +536,7 @@ runBtn.addEventListener("click", () => {
         <p><strong>Prediction:</strong> ${line}</p>
         <p><strong>Projected Winner:</strong> ${winner}</p>
         <p><strong>Win Probability:</strong> ${homeSel.value} ${(homeWinPct*100).toFixed(0)}%  –  ${awaySel.value} ${((1-homeWinPct)*100).toFixed(0)}%</p>
-        <p><strong>Model Spread:</strong> ${mH >= mA ? homeSel.value : awaySel.value} ${ (mH - mA >= 0 ? "+" : "") + fmt1(mH - mA) }</p>
+        <p><strong>Model Spread:</strong> ${mH >= mA ? homeSel.value : awaySel.value} ${(mH - mA >= 0 ? "+" : "") + fmt1(mH - mA)}</p>
         <p><strong>Book Spread (Home):</strong> ${Number(spreadInput.value) >= 0 ? "+" : ""}${Number(spreadInput.value).toFixed(1)}</p>
         <p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}  &nbsp; <strong>Book Total:</strong> ${Number(totalInput.value).toFixed(1)}</p>
         <p><strong>Totals Play:</strong> ${totalPlay}  &nbsp; <strong>Spread Play:</strong> ${spreadPlay}</p>
@@ -551,7 +545,7 @@ runBtn.addEventListener("click", () => {
       `;
       saveBtn.disabled = false;
 
-      // stash current row data for Save
+      // Save current result
       saveBtn.onclick = () => {
         const row = {
           Away: awaySel.value,
