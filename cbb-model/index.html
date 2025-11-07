@@ -1,1 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>LineupWire CBB Model (Vercel Fast)</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>🏀 CBB Projection — Fast (Vercel)</h1>
+      <p>KenPom + TeamRankings • Deterministic + 1000-sim Monte Carlo</p>
+    </header>
 
+    <section class="card">
+      <h2>Inputs</h2>
+      <div class="grid">
+        <label>
+          Away Team
+          <select id="awayTeam" disabled></select>
+        </label>
+        <label>
+          Home Team
+          <select id="homeTeam" disabled></select>
+        </label>
+        <label>
+          Home Spread (neg if favored)
+          <input id="bookSpread" type="text" inputmode="decimal" value="-5.0" />
+        </label>
+        <label>
+          Book Total
+          <input id="bookTotal" type="text" inputmode="decimal" value="145.0" />
+        </label>
+      </div>
+      <div class="row">
+        <button id="runBtn" disabled>Run Projection</button>
+        <button id="saveBtn" disabled>Save Game</button>
+      </div>
+      <small id="status" class="muted">Loading data…</small>
+    </section>
+
+    <section id="results" class="card hidden">
+      <h2>Result</h2>
+      <div id="resultBody" class="stack"></div>
+    </section>
+
+    <section class="card">
+      <h2>Saved Games</h2>
+      <div class="row">
+        <button id="downloadBtn">⬇️ Download CSV</button>
+        <button id="undoBtn">↩️ Undo last</button>
+        <button id="clearBtn">🗑️ Clear all</button>
+      </div>
+      <div id="savedTableWrap" class="tableWrap"></div>
+    </section>
+
+    <footer class="footer">
+      <span>LineupWire • Fast client-side model (no servers)</span>
+    </footer>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
