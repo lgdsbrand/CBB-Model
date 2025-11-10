@@ -332,77 +332,156 @@ async function init(){
   loadSaved();
 }
 
-runBtn.addEventListener("click",()=>{
-  try{
-    const away=awaySel.value, home=homeSel.value;
-    const bookSpread=Number(spreadInput.value), bookTotal=Number(totalInput.value);
-    if(!away||!home||!Number.isFinite(bookSpread)||!Number.isFinite(bookTotal)){ alert("Please select teams and enter numeric spread/total."); return; }
-    if(teamKey(away)===teamKey(home)){ alert("Select two different teams."); return; }
+runBtn.addEventListener("click", () => {
+  try {
+    // --- Teams (typing or dropdowns) ---
+    // If you're still using <select>, replace awayInput/homeInput with awaySel/homeSel
+    const teamsAll = KP.map(r => r.Team);
+    const away = (typeof resolveTeam === "function")
+      ? resolveTeam(awayInput.value, teamsAll)  // datalist version
+      : awaySel.value;                          // select version
+    const home = (typeof resolveTeam === "function")
+      ? resolveTeam(homeInput.value, teamsAll)
+      : homeSel.value;
 
-    const {poss,pppA,pppH}=baseParams(away,home);
-    const detA=pppA*poss, detH=pppH*poss + HOME_EDGE_POINTS;
+    if (!away || !home) { alert("Please select valid teams."); return; }
+    if (teamKey(away) === teamKey(home)) { alert("Select two different teams."); return; }
 
-    resultBody.innerHTML=`
-      <p><strong>Prediction:</strong> ${detH>=detA?`${home} ${Math.round(detH)} – ${away} ${Math.round(detA)}`:`${away} ${Math.round(detA)} – ${home} ${Math.round(detH)}`}</p>
+    // --- Book lines are OPTIONAL now ---
+    const hasBookSpread = (spreadInput.value ?? "").trim() !== "";
+    const hasBookTotal  = (totalInput.value ?? "").trim()  !== "";
+    const bookSpread = hasBookSpread ? Number(spreadInput.value) : null; // home spread (neg if favored)
+    const bookTotal  = hasBookTotal  ? Number(totalInput.value)  : null;
+
+    // --- Pure model inputs (no book influence) ---
+    const { poss, pppA, pppH } = baseParams(away, home);
+
+    // Guards so the sim never NaNs
+    const gPoss = Number.isFinite(poss) ? poss : 69.5;
+    const gA    = Number.isFinite(pppA) ? pppA : (LEAGUE_AVG_ADJ/100.0);
+    const gH    = Number.isFinite(pppH) ? pppH : (LEAGUE_AVG_ADJ/100.0);
+
+    // Deterministic preview (still model-only)
+    const detA = gA * gPoss;
+    const detH = gH * gPoss + HOME_EDGE_POINTS;
+
+    resultBody.innerHTML = `
+      <p><strong>Prediction (model-only):</strong> ${detH>=detA?`${home} ${Math.round(detH)} – ${away} ${Math.round(detA)}`:`${away} ${Math.round(detA)} – ${home} ${Math.round(detH)}`}</p>
       <p><strong>Projected Winner:</strong> ${detH>=detA?home:away}</p>
-      <p><span class="badge gray">Running ${N_SIMS}-sim Monte Carlo…</span></p>`;
-    resultsSec.classList.remove("hidden"); saveBtn.disabled=true;
+      <p><span class="badge gray">Running ${N_SIMS}-sim Monte Carlo…</span></p>
+    `;
+    resultsSec.classList.remove("hidden");
+    saveBtn.disabled = true;
 
-    const w=new Worker(workerURL);
-    w.postMessage({poss,pppA,pppH,homeEdge:HOME_EDGE_POINTS,nSims:N_SIMS,possSD:POSS_SD,pppSD:PPP_SD});
-    w.onmessage=(ev)=>{
-      const {mA,mH,qA25,qA75,qH25,qH75,homeWinPct}=ev.data;
-      const modelTotal=mA+mH, modelSpreadHome=mH-mA;
-      const totalEdge=modelTotal-bookTotal;
-      const bookHomeEdge=-bookSpread;
-      const spreadEdge=modelSpreadHome-bookHomeEdge;
+    // --- Monte Carlo (still model-only) ---
+    const w = new Worker(workerURL);
+    w.postMessage({
+      poss: gPoss, pppA: gA, pppH: gH,
+      homeEdge: HOME_EDGE_POINTS,
+      nSims: N_SIMS, possSD: POSS_SD, pppSD: PPP_SD
+    });
 
-      let totalPlay="NO BET";
-      if(totalEdge>=TOTAL_EDGE_TH) totalPlay=`OVER ${bookTotal.toFixed(1)}`;
-      else if(totalEdge<=-TOTAL_EDGE_TH) totalPlay=`UNDER ${bookTotal.toFixed(1)}`;
+    w.onmessage = (ev) => {
+      const { mA, mH, qA25, qA75, qH25, qH75, homeWinPct } = ev.data;
 
-      let spreadPlay="NO BET";
-      if(spreadEdge>=SPREAD_EDGE_TH) spreadPlay=`${home} ${bookSpread.toFixed(1)}`;
-      else if(spreadEdge<=-SPREAD_EDGE_TH) spreadPlay=`${away} ${(-bookSpread).toFixed(1)}`;
+      // Pure model outputs:
+      const modelTotal = mA + mH;
+      const modelSpreadHome = mH - mA; // positive means home favored by that many points
 
-      const conf=confFromEdge(Math.max(Math.abs(totalEdge),Math.abs(spreadEdge)));
-      const winner=mH>=mA?home:away;
-      const line=mH>=mA?`${home} ${Math.round(mH)} – ${away} ${Math.round(mA)}`:`${away} ${Math.round(mA)} – ${home} ${Math.round(mH)}`;
+      // If book lines provided, compute edges/plays. Otherwise skip.
+      let edgesHTML = "";
+      let savePayload = {};
+      if (hasBookSpread || hasBookTotal) {
+        let totalEdge = null, spreadEdge = null;
+        let totalPlay = "—", spreadPlay = "—";
 
-      resultBody.innerHTML=`
-        <p><strong>Prediction:</strong> ${line}</p>
+        if (hasBookTotal && Number.isFinite(bookTotal)) {
+          totalEdge = modelTotal - bookTotal;
+          if (totalEdge >= TOTAL_EDGE_TH) totalPlay = `OVER ${bookTotal.toFixed(1)}`;
+          else if (totalEdge <= -TOTAL_EDGE_TH) totalPlay = `UNDER ${bookTotal.toFixed(1)}`;
+          else totalPlay = "NO BET";
+        }
+
+        if (hasBookSpread && Number.isFinite(bookSpread)) {
+          const bookHomeEdge = -bookSpread; // convert book to our sign convention
+          spreadEdge = modelSpreadHome - bookHomeEdge;
+          if (spreadEdge >= SPREAD_EDGE_TH)      spreadPlay = `${home} ${bookSpread.toFixed(1)}`;
+          else if (spreadEdge <= -SPREAD_EDGE_TH) spreadPlay = `${away} ${(-bookSpread).toFixed(1)}`;
+          else                                   spreadPlay = "NO BET";
+        }
+
+        const conf = (() => {
+          const mag = Math.max(
+            Math.abs(spreadEdge ?? 0),
+            Math.abs(totalEdge  ?? 0)
+          );
+          return Math.round(1 + 9 * Math.min(Math.abs(mag)/6.0, 1));
+        })();
+
+        edgesHTML = `
+          ${hasBookTotal ? `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)} &nbsp; <strong>Book Total:</strong> ${bookTotal.toFixed(1)}</p>` : `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>`}
+          ${hasBookSpread ? `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)} &nbsp; <strong>Book Spread (Home):</strong> ${(bookSpread>=0?"+":"")+bookSpread.toFixed(1)}</p>` : `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>`}
+          ${hasBookTotal ? `<p><strong>Totals Play:</strong> ${totalPlay}</p>` : ``}
+          ${hasBookSpread ? `<p><strong>Spread Play:</strong> ${spreadPlay}</p>` : ``}
+          <p><strong>Likely Ranges (25–75%):</strong> ${away} ${fmt1(qA25)}–${fmt1(qA75)} | ${home} ${fmt1(qH25)}–${fmt1(qH75)}</p>
+          <div><strong>Prediction Confidence:</strong> ${badge(
+            (hasBookTotal || hasBookSpread) ? `${conf} / 10` : "Model-only",
+            (hasBookTotal || hasBookSpread) ? (conf>=7?"green":conf>=4?"gray":"red") : "gray"
+          )}</div>
+        `;
+
+        savePayload = {
+          "Book Spread (Home)": hasBookSpread ? (bookSpread>=0?"+":"")+bookSpread.toFixed(1) : "",
+          "Book Total": hasBookTotal ? bookTotal.toFixed(1) : "",
+          "Total Edge": hasBookTotal ? fmt1(totalEdge) : "",
+          "Spread Edge": hasBookSpread ? fmt1(spreadEdge) : "",
+          "Totals Play": hasBookTotal ? totalPlay : "",
+          "Spread Play": hasBookSpread ? spreadPlay : "",
+          "Confidence (1-10)": (hasBookTotal || hasBookSpread) ? conf : ""
+        };
+      } else {
+        // No book lines – just show model outputs
+        edgesHTML = `
+          <p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>
+          <p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>
+          <p><strong>Likely Ranges (25–75%):</strong> ${away} ${fmt1(qA25)}–${fmt1(qA75)} | ${home} ${fmt1(qH25)}–${fmt1(qH75)}</p>
+          <div><strong>Prediction Confidence:</strong> ${badge("Model-only","gray")}</div>
+        `;
+      }
+
+      const winner = mH >= mA ? home : away;
+      const line = mH>=mA
+        ? `${home} ${Math.round(mH)} – ${away} ${Math.round(mA)}`
+        : `${away} ${Math.round(mA)} – ${home} ${Math.round(mH)}`;
+
+      resultBody.innerHTML = `
+        <p><strong>Prediction (model-only):</strong> ${line}</p>
         <p><strong>Projected Winner:</strong> ${winner}</p>
         <p><strong>Win Probability:</strong> ${home} ${(homeWinPct*100).toFixed(0)}%  –  ${away} ${((1-homeWinPct)*100).toFixed(0)}%</p>
-        <p><strong>Model Spread:</strong> ${(mH-mA>=0?home:away)} ${(mH-mA>=0?"+":"")+fmt1(mH-mA)}</p>
-        <p><strong>Book Spread (Home):</strong> ${(bookSpread>=0?"+":"")+bookSpread.toFixed(1)}</p>
-        <p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)} &nbsp; <strong>Book Total:</strong> ${bookTotal.toFixed(1)}</p>
-        <p><strong>Totals Play:</strong> ${totalPlay} &nbsp; <strong>Spread Play:</strong> ${spreadPlay}</p>
-        <p><strong>Likely Ranges (25–75%):</strong> ${away} ${fmt1(qA25)}–${fmt1(qA75)} | ${home} ${fmt1(qH25)}–${fmt1(qH75)}</p>
-        <div><strong>Prediction Confidence:</strong> ${badge(conf+" / 10", conf>=7?"green":conf>=4?"gray":"red")}</div>`;
-      saveBtn.disabled=false;
+        ${edgesHTML}
+      `;
 
-      saveBtn.onclick=()=>{
+      // Save table row (always saves model outputs; book info only if provided)
+      saveBtn.disabled = false;
+      saveBtn.onclick = () => {
         savedGames.push({
-          Away:away, Home:home,
-          "Book Spread (Home)":(bookSpread>=0?"+":"")+bookSpread.toFixed(1),
-          "Book Total":bookTotal.toFixed(1),
-          "Model Away Pts":fmt1(mA),
-          "Model Home Pts":fmt1(mH),
-          "Model Total":fmt1(modelTotal),
-          "Model Spread (Home)":fmt1(modelSpreadHome),
-          "Total Edge":fmt1(totalEdge),
-          "Spread Edge":fmt1(spreadEdge),
-          "Totals Play":totalPlay,
-          "Spread Play":spreadPlay,
-          "Home Win %":(homeWinPct*100).toFixed(1),
-          "Away Win %":((1-homeWinPct)*100).toFixed(1),
-          "Confidence (1-10)":conf
+          Away: away,
+          Home: home,
+          "Model Away Pts": fmt1(mA),
+          "Model Home Pts": fmt1(mH),
+          "Model Total": fmt1(modelTotal),
+          "Model Spread (Home)": fmt1(modelSpreadHome),
+          ...savePayload
         });
         persistSaved();
       };
+
       w.terminate();
     };
-  }catch(e){ console.error(e); alert("Run error:\n"+e.message); }
+  } catch (e) {
+    console.error(e);
+    alert("Run error:\n" + e.message);
+  }
 });
 
 downloadBtn.addEventListener("click",()=>{ if(!savedGames.length) return; const csv=toCSV(savedGames); const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`cbb_saved_${new Date().toISOString().slice(0,16).replace("T","_")}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); });
