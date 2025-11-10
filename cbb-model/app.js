@@ -34,13 +34,13 @@ const TOTAL_EDGE_TH = 2.0;
 const SPREAD_EDGE_TH = 1.5;
 
 const N_SIMS = 1000;
-const POSS_SD = 3.5;
+const POSS_SD = 4.0;
 const PPP_SD  = 0.04;
 
 // TR feature weights
-const W_EFG = 0.40;
-const W_TOV = 0.25;
-const W_REB = 0.20;
+const W_EFG = 0.50;
+const W_TOV = 0.30;
+const W_REB = 0.25;
 
 /* ---------- TeamRankings sheet column mapping (0-based) ---------- */
 const TEAM_COL_INDEX = 1; // B
