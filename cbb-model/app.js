@@ -36,6 +36,7 @@ const SPREAD_EDGE_TH = 1.5;
 const N_SIMS = 1000;
 const POSS_SD = 4.0;
 const PPP_SD  = 0.04;
+const damp = 0.9;
 
 // TR feature weights
 const W_EFG = 0.50;
