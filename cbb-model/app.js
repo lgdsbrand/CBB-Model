@@ -1,6 +1,7 @@
 /* =========================================================
    CBB Projection Model — Deterministic (no Monte Carlo)
    KenPom (fixed letters) + TeamRankings (6 CSVs)
+   Type-to-search team inputs
    ========================================================= */
 
 /* ---------- TeamRankings URLs (yours) ---------- */
@@ -27,31 +28,31 @@ const KENPOM_COLS = {
   adjt:  "J",   // AdjT / Tempo
 };
 
-/* ---------- Model Params ---------- */
+/* ---------- Model Params (stronger separation) ---------- */
 const LEAGUE_AVG_ADJ = 105.0;   // per 100 poss
 
-// Separation & weighting knobs (deterministic)
-const damp             = 0.9;   // 0.8–1.0; higher => TR style impacts more
-const HOME_EDGE_POINTS = 3.8;   // HCA (points)
+// Separation & weighting knobs
+const damp             = 1.0;   // TR style impacts more (was 0.9)
+const HOME_EDGE_POINTS = 4.0;   // stronger home-court
 
-// Tempo & totals stretch (widen totals via pace & O/D strength)
+// Tempo & totals stretch
 const LGE_TEMPO     = 69.5;
-const PACE_STRETCH  = 0.35; // 0.25–0.45 widens totals via tempo
-const TOTAL_STRETCH = 0.08; // 0.05–0.12 widens totals via O/D strength
+const PACE_STRETCH  = 0.40;     // widens totals via pace
+const TOTAL_STRETCH = 0.10;     // widens totals via O/D strength
 
-// Strength-gap booster (spreads separate more with big efficiency gaps)
-const BOOSTER_K = 0.0055;   // 0.004–0.006
+// Strength-gap booster
+const BOOSTER_K = 0.0060;       // bigger spreads with large AdjEM gap
 
-// AdjEM → spread correction (locks margin to KP gap scaled by pace)
-const EM_TO_SPREAD_K   = 1.00; // em_gap * (poss/100) to points (pre-HCA)
-const EM_SPREAD_WEIGHT = 0.90; // 0..1; pull toward AdjEM spread (higher = closer to KP)
+// AdjEM → spread correction
+const EM_TO_SPREAD_K   = 1.05;  // points per AdjEM gap scaled by pace
+const EM_SPREAD_WEIGHT = 1.00;  // pull fully to AdjEM target spread
 
-// PPP clamps (safety)
-const MIN_PPP = 0.85;
-const MAX_PPP = 1.25;
+// PPP clamps (wider bounds)
+const MIN_PPP = 0.78;
+const MAX_PPP = 1.38;
 
-// TR feature weights (slightly stronger)
-const W_EFG = 0.50;
+// TR feature weights
+const W_EFG = 0.55;
 const W_TOV = 0.30;
 const W_REB = 0.25;
 
@@ -61,25 +62,21 @@ const VAL25_INDEX    = 2; // C
 const VAL24_INDEX    = 7; // H
 
 /* ---------- DOM ---------- */
-// If you already switched to type-to-search, use inputs; else keep selects
 const awayInput = document.getElementById("awayTeamInput") || null;
 const homeInput = document.getElementById("homeTeamInput") || null;
 const teamList  = document.getElementById("teamList") || null;
 
-const awaySel = document.getElementById("awayTeam") || null;
-const homeSel = document.getElementById("homeTeam") || null;
-
 const spreadInput = document.getElementById("bookSpread");
-const totalInput = document.getElementById("bookTotal");
-const runBtn = document.getElementById("runBtn");
-const saveBtn = document.getElementById("saveBtn");
-const statusEl = document.getElementById("status");
-const resultsSec = document.getElementById("results");
-const resultBody = document.getElementById("resultBody");
-const savedWrap = document.getElementById("savedTableWrap");
+const totalInput  = document.getElementById("bookTotal");
+const runBtn      = document.getElementById("runBtn");
+const saveBtn     = document.getElementById("saveBtn");
+const statusEl    = document.getElementById("status");
+const resultsSec  = document.getElementById("results");
+const resultBody  = document.getElementById("resultBody");
+const savedWrap   = document.getElementById("savedTableWrap");
 const downloadBtn = document.getElementById("downloadBtn");
-const undoBtn = document.getElementById("undoBtn");
-const clearBtn = document.getElementById("clearBtn");
+const undoBtn     = document.getElementById("undoBtn");
+const clearBtn    = document.getElementById("clearBtn");
 
 /* ---------- App state ---------- */
 let KP = null; // [{Team,AdjO,AdjD,AdjT}]
@@ -118,16 +115,15 @@ async function fetchCSV(url){
 const teamKey = t=>String(t||"").toLowerCase().trim();
 const fmt1 = x=>Number(x).toFixed(1);
 const badge=(t,k)=>`<span class="badge ${k==="green"?"green":k==="red"?"red":"gray"}">${t}</span>`;
-function confFromEdge(edge,hi=6){ const e=Math.min(Math.abs(edge)/hi,1); return Math.round(1+9*e); }
 function percentify(v){ if(v==null||v==="") return NaN; const n=Number(String(v).trim()); return Number.isFinite(n)?(n>1?n/100:n):NaN; }
 function coerceNum(x){ const s=String(x??"").replace(/[^0-9.+-]/g,"").replace(/^([+-])$/,""); const n=parseFloat(s); return Number.isFinite(n)?n:NaN; }
 function colLetterToIdx(letter){
   const s=String(letter).trim().toUpperCase();
   let idx=0; for(let i=0;i<s.length;i++){ idx = idx*26 + (s.charCodeAt(i)-64); } // 'A'->1
-  return idx-1; // zero-based
+  return idx-1;
 }
 
-/* type-to-search helpers (only if using <input list>) */
+/* type-to-search helpers */
 function populateTeamDatalist(teams) {
   if (!teamList) return;
   teamList.innerHTML = teams.map(t => `<option value="${t}"></option>`).join("");
@@ -165,8 +161,8 @@ function buildKP_fixedLetters(rows){
   const out=[];
   for(let r=startIdx;r<rows.length;r++){
     const row=rows[r];
-    if(!row || row.length<=maxIdx) continue;                 // row too short
-    if(row[0] && /rk/i.test(String(row[0]))) continue;      // repeated header line
+    if(!row || row.length<=maxIdx) continue;                 // too short
+    if(row[0] && /rk/i.test(String(row[0]))) continue;       // repeated header line
     const Team=row[iTeam]?.trim();
     if(!Team) continue;
     const AdjO=coerceNum(row[iAdjO]);
@@ -233,7 +229,7 @@ async function loadTR(urls,w25,w24){
 }
 
 /* =========================================================
-   Safe KenPom fetch + deterministic params with stretch/booster + AdjEM correction
+   Safe KenPom fetch + deterministic params with stretch/booster + strong AdjEM correction
    ========================================================= */
 function safeKPFor(name){
   const kname = teamKey(name);
@@ -256,12 +252,12 @@ function safeKPFor(name){
   return { Team: k?.Team || t?.Team || name, AdjO: adjO, AdjD: adjD, AdjT: adjT };
 }
 
-// === baseParams with pace/total stretch + strength booster + TR style + AdjEM spread correction ===
+// === baseParams with pace/total stretch + strength booster + TR style + AdjEM spread correction & skew ===
 function baseParams(away, home) {
   const A = safeKPFor(away);
   const H = safeKPFor(home);
 
-  // --- Possessions from tempo + pace stretch (fast vs fast up, slow vs slow down)
+  // --- Possessions from tempo + pace stretch
   let poss = 0.5 * (A.AdjT + H.AdjT);
   const tempo_dev = ((A.AdjT + H.AdjT) / 2 - LGE_TEMPO) / LGE_TEMPO;
   poss *= 1 + PACE_STRETCH * tempo_dev;
@@ -271,7 +267,7 @@ function baseParams(away, home) {
   let pppA = BASE_PPP * (A.AdjO / LEAGUE_AVG_ADJ) * (LEAGUE_AVG_ADJ / H.AdjD);
   let pppH = BASE_PPP * (H.AdjO / LEAGUE_AVG_ADJ) * (LEAGUE_AVG_ADJ / A.AdjD);
 
-  // --- Totals stretch (strong O + weak D => a bit higher PPP for both)
+  // --- Totals stretch (strong O + weak D => higher PPP)
   {
     const avgOff = (A.AdjO + H.AdjO) / 2;
     const avgDef = (A.AdjD + H.AdjD) / 2;
@@ -283,7 +279,7 @@ function baseParams(away, home) {
     pppH *= tStretch;
   }
 
-  // --- Strength gap booster (push favorites ahead more)
+  // --- Strength gap booster (spread separation)
   {
     const emA = A.AdjO - A.AdjD;
     const emH = H.AdjO - H.AdjD;
@@ -292,7 +288,7 @@ function baseParams(away, home) {
     pppA *= Math.exp(-BOOSTER_K * gap);
   }
 
-  // --- TeamRankings style multipliers (eFG, TOV, REB, eff anchors)
+  // --- TeamRankings style multipliers (eFG, TOV, REB, eff anchors) - stronger anchors (0.75)
   if (TR && LG) {
     const rA = TR.find(r => r._team_key === teamKey(away)) ||
                TR.find(r => teamKey(r.Team).includes(teamKey(away)));
@@ -322,30 +318,30 @@ function baseParams(away, home) {
     const eff_anchor_Ad = Math.max(LG.DEF_EFF, 1e-6) / Math.max(A_DEF_EFF, 1e-6);
 
     let off_mult_A =
-      Math.pow(eff_anchor_A, 0.5) *
+      Math.pow(eff_anchor_A, 0.75) *
       Math.pow(A_OFF_EFG / Math.max(LG.OFF_EFG, 1e-6), W_EFG) *
       Math.pow((1 - A_TOV) / Math.max(1e-6, 1 - LG.TOV_POSS), W_TOV) *
       Math.pow(A_OFF_REB / Math.max(LG.OFF_REB, 1e-6), W_REB);
 
     let def_mult_H =
-      Math.pow(eff_anchor_Hd, 0.5) *
+      Math.pow(eff_anchor_Hd, 0.75) *
       Math.pow(H_DEF_REB / Math.max(LG.DEF_REB, 1e-6), W_REB);
 
     let off_mult_H =
-      Math.pow(eff_anchor_Ho, 0.5) *
+      Math.pow(eff_anchor_Ho, 0.75) *
       Math.pow(H_OFF_EFG / Math.max(LG.OFF_EFG, 1e-6), W_EFG) *
       Math.pow((1 - H_TOV) / Math.max(1e-6, 1 - LG.TOV_POSS), W_TOV) *
       Math.pow(H_OFF_REB / Math.max(LG.OFF_REB, 1e-6), W_REB);
 
     let def_mult_A =
-      Math.pow(eff_anchor_Ad, 0.5) *
+      Math.pow(eff_anchor_Ad, 0.75) *
       Math.pow(A_DEF_REB / Math.max(LG.DEF_REB, 1e-6), W_REB);
 
     pppA *= Math.pow(off_mult_A, damp) * Math.pow(def_mult_H, damp);
     pppH *= Math.pow(off_mult_H, damp) * Math.pow(def_mult_A, damp);
   }
 
-  // --- AdjEM-blended spread correction (fix margin, preserve total)
+  // --- AdjEM-blended spread correction (fix margin, preserve total, skew to favorite) ---
   {
     // current spread from model
     const s_model = (pppH - pppA) * poss + HOME_EDGE_POINTS;
@@ -359,17 +355,27 @@ function baseParams(away, home) {
     const s_em_raw = EM_TO_SPREAD_K * em_gap * (poss / 100);
     const s_em = s_em_raw + HOME_EDGE_POINTS;
 
-    // blend to target
+    // blend to target (with EM_SPREAD_WEIGHT=1.0 this equals s_em)
     const s_target = (1 - EM_SPREAD_WEIGHT) * s_model + EM_SPREAD_WEIGHT * s_em;
 
     // preserve total while adjusting diff
-    const sum_ppp = pppA + pppH;
+    const sum_ppp0 = pppA + pppH;
     let diff_ppp = (s_target - HOME_EDGE_POINTS) / Math.max(poss, 1e-6);
-    const cap = Math.max(1e-6, sum_ppp - 1e-3);
+
+    // cap diff so ppp remain positive
+    const cap = Math.max(1e-6, sum_ppp0 - 1e-3);
     if (Math.abs(diff_ppp) >= cap) diff_ppp = Math.sign(diff_ppp) * (cap - 1e-6);
 
-    let pH = (sum_ppp + diff_ppp) / 2;
-    let pA = (sum_ppp - diff_ppp) / 2;
+    // initial PPPs from sum/diff
+    let pH = (sum_ppp0 + diff_ppp) / 2;
+    let pA = (sum_ppp0 - diff_ppp) / 2;
+
+    // ---- Extra skew toward the favorite while keeping total stable ----
+    // scale skew by AdjEM gap (bigger mismatch → more skew)
+    const skew = Math.max(-0.6, Math.min(0.6, em_gap / 40)); // -0.6..+0.6
+    const total_ppp = Math.max(1e-6, pH + pA);
+    pH = total_ppp * (0.5 + skew/2);
+    pA = total_ppp * (0.5 - skew/2);
 
     // clamp PPPs
     pppH = Math.min(MAX_PPP, Math.max(MIN_PPP, pH));
@@ -414,15 +420,11 @@ async function init(){
 
     const teams=KP.map(r=>r.Team).sort((a,b)=>a.localeCompare(b));
 
-    // If using type-to-search
+    // type-to-search
     if (teamList && awayInput && homeInput) {
       populateTeamDatalist(teams);
       awayInput.value = teams[0] || "";
       homeInput.value = teams[1] || "";
-    } else if (awaySel && homeSel) {
-      awaySel.innerHTML=teams.map(t=>`<option>${t}</option>`).join("");
-      homeSel.innerHTML=teams.map(t=>`<option>${t}</option>`).join("");
-      awaySel.disabled=false; homeSel.disabled=false;
     }
 
     runBtn.disabled=false; saveBtn.disabled=true;
@@ -436,17 +438,10 @@ async function init(){
 runBtn.addEventListener("click",()=>{
   try{
     const teamsAll = KP.map(r=>r.Team);
-    // team pickers: datalist > select
-    let away="", home="";
-    if (teamList && awayInput && homeInput) {
-      away = resolveTeam(awayInput.value, teamsAll);
-      home = resolveTeam(homeInput.value, teamsAll);
-    } else if (awaySel && homeSel) {
-      away = awaySel.value;
-      home = homeSel.value;
-    }
+    const away = resolveTeam(awayInput?.value || "", teamsAll);
+    const home = resolveTeam(homeInput?.value || "", teamsAll);
 
-    if(!away||!home){ alert("Please select valid teams."); return; }
+    if(!away||!home){ alert("Please pick valid teams from the list (type to search, then tap a suggestion)."); return; }
     if(teamKey(away)===teamKey(home)){ alert("Select two different teams."); return; }
 
     // Book lines OPTIONAL (comparison only)
@@ -460,7 +455,7 @@ runBtn.addEventListener("click",()=>{
     const detA = pppA * poss;
     const detH = pppH * poss + HOME_EDGE_POINTS;
 
-    // Render immediate results
+    // Render
     const winner = detH >= detA ? home : away;
     const line = detH>=detA
       ? `${home} ${Math.round(detH)} – ${away} ${Math.round(detA)}`
