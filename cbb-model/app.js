@@ -1,6 +1,6 @@
 /* =========================================================
-   CBB Projection Model — KenPom (fixed letters) + TeamRankings
-   app.js (client-side)
+   CBB Projection Model — Deterministic (no Monte Carlo)
+   KenPom (fixed letters) + TeamRankings (6 CSVs)
    ========================================================= */
 
 /* ---------- TeamRankings URLs (yours) ---------- */
@@ -30,26 +30,24 @@ const KENPOM_COLS = {
 /* ---------- Model Params ---------- */
 const LEAGUE_AVG_ADJ = 105.0;   // per 100 poss
 
-// ===== Separation & variance knobs =====
+// Separation & weighting knobs (deterministic)
 const damp             = 0.9;   // 0.8–1.0; higher => TR style impacts more
-const HOME_EDGE_POINTS = 3.8;   // was 3.0
+const HOME_EDGE_POINTS = 3.8;   // HCA (points)
 
-// Monte Carlo variance
-const PPP_SD  = 0.05;  // was 0.04
-const POSS_SD = 5.0;   // was 3.5
-
-// Tempo & totals stretch
+// Tempo & totals stretch (widen totals via pace & O/D strength)
 const LGE_TEMPO     = 69.5;
 const PACE_STRETCH  = 0.35; // 0.25–0.45 widens totals via tempo
 const TOTAL_STRETCH = 0.08; // 0.05–0.12 widens totals via O/D strength
 
-// Strength-gap booster
+// Strength-gap booster (spreads separate more with big efficiency gaps)
 const BOOSTER_K = 0.0055;   // 0.004–0.006
 
-// AdjEM → spread correction knobs
-const EM_TO_SPREAD_K   = 1.00; // spread target from AdjEM: em_gap * (poss/100)
-const EM_SPREAD_WEIGHT = 0.85; // 0..1; how much to pull toward AdjEM spread
-const MIN_PPP = 0.85;          // PPP clamps (keep totals sane)
+// AdjEM → spread correction (locks margin to KP gap scaled by pace)
+const EM_TO_SPREAD_K   = 1.00; // em_gap * (poss/100) to points (pre-HCA)
+const EM_SPREAD_WEIGHT = 0.90; // 0..1; pull toward AdjEM spread (higher = closer to KP)
+
+// PPP clamps (safety)
+const MIN_PPP = 0.85;
 const MAX_PPP = 1.25;
 
 // TR feature weights (slightly stronger)
@@ -63,8 +61,14 @@ const VAL25_INDEX    = 2; // C
 const VAL24_INDEX    = 7; // H
 
 /* ---------- DOM ---------- */
-const awaySel = document.getElementById("awayTeam");
-const homeSel = document.getElementById("homeTeam");
+// If you already switched to type-to-search, use inputs; else keep selects
+const awayInput = document.getElementById("awayTeamInput") || null;
+const homeInput = document.getElementById("homeTeamInput") || null;
+const teamList  = document.getElementById("teamList") || null;
+
+const awaySel = document.getElementById("awayTeam") || null;
+const homeSel = document.getElementById("homeTeam") || null;
+
 const spreadInput = document.getElementById("bookSpread");
 const totalInput = document.getElementById("bookTotal");
 const runBtn = document.getElementById("runBtn");
@@ -121,6 +125,23 @@ function colLetterToIdx(letter){
   const s=String(letter).trim().toUpperCase();
   let idx=0; for(let i=0;i<s.length;i++){ idx = idx*26 + (s.charCodeAt(i)-64); } // 'A'->1
   return idx-1; // zero-based
+}
+
+/* type-to-search helpers (only if using <input list>) */
+function populateTeamDatalist(teams) {
+  if (!teamList) return;
+  teamList.innerHTML = teams.map(t => `<option value="${t}"></option>`).join("");
+}
+function resolveTeam(inputValue, teams) {
+  if (!inputValue) return "";
+  const v = inputValue.trim().toLowerCase();
+  let hit = teams.find(t => t.toLowerCase() === v);
+  if (hit) return hit;
+  const starts = teams.filter(t => t.toLowerCase().startsWith(v));
+  if (starts.length === 1) return starts[0];
+  const contains = teams.filter(t => t.toLowerCase().includes(v));
+  if (contains.length === 1) return contains[0];
+  return "";
 }
 
 /* =========================================================
@@ -365,34 +386,13 @@ function baseParams(away, home) {
 }
 
 /* =========================================================
-   Monte Carlo (Web Worker)
-   ========================================================= */
-const workerCode=`
-self.onmessage=e=>{
-  const {poss,pppA,pppH,homeEdge,nSims,possSD,pppSD}=e.data;
-  function randn(m,s){const u=Math.random(),v=Math.random();const z=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);return m+s*z;}
-  const A=new Float64Array(nSims), H=new Float64Array(nSims); let hw=0;
-  for(let i=0;i<nSims;i++){
-    // allow slower games while keeping a safe floor
-    const p=Math.max(40,randn(poss,possSD));
-    const a=randn(pppA,pppSD)*p;
-    const h=randn(pppH,pppSD)*p+homeEdge;
-    A[i]=a; H[i]=h; if(h>a) hw++;
-  }
-  const mean=a=>{let s=0;for(let i=0;i<a.length;i++) s+=a[i]; return s/a.length;}
-  const q=(a,t)=>{const b=Array.from(a).sort((x,y)=>x-y); const idx=Math.max(0,Math.min(b.length-1,Math.floor(t*(b.length-1)))); return b[idx];}
-  postMessage({mA:mean(A),mH:mean(H),qA25:q(A,0.25),qA75:q(A,0.75),qH25:q(H,0.25),qH75:q(H,0.75),homeWinPct:hw/nSims});
-}`;
-const workerURL=URL.createObjectURL(new Blob([workerCode],{type:"text/javascript"}));
-
-/* =========================================================
    Saved games table
    ========================================================= */
 function loadSaved(){ try{savedGames=JSON.parse(localStorage.getItem("cbb_saved")||"[]");}catch{savedGames=[];} renderSaved(); }
 function persistSaved(){ localStorage.setItem("cbb_saved",JSON.stringify(savedGames)); renderSaved(); }
 function renderSaved(){
   if(!savedGames.length){ savedWrap.innerHTML=`<p class="muted">No games saved yet.</p>`; return; }
-  const cols=["Away","Home","Book Spread (Home)","Book Total","Model Away Pts","Model Home Pts","Model Total","Model Spread (Home)","Total Edge","Spread Edge","Totals Play","Spread Play","Home Win %","Away Win %","Confidence (1-10)"];
+  const cols=["Away","Home","Book Spread (Home)","Book Total","Model Away Pts","Model Home Pts","Model Total","Model Spread (Home)","Total Edge","Spread Edge","Totals Play","Spread Play","Confidence (1-10)"];
   const head=`<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>`;
   const body=savedGames.map(r=>`<tr>${cols.map(c=>`<td>${r[c]??""}</td>`).join("")}</tr>`).join("");
   savedWrap.innerHTML=`<div class="tableWrap"><table>${head}<tbody>${body}</tbody></table></div>`;
@@ -400,7 +400,7 @@ function renderSaved(){
 function toCSV(arr){ if(!arr.length) return ""; const cols=Object.keys(arr[0]); const esc=v=>`"${String(v??"").replaceAll('"','""')}"`; return cols.map(esc).join(",")+"\n"+arr.map(r=>cols.map(c=>esc(r[c])).join(",")).join("\n"); }
 
 /* =========================================================
-   App init + run (book lines optional; model-only by default)
+   App init + run (deterministic; book lines optional)
    ========================================================= */
 async function init(){
   try{
@@ -413,10 +413,19 @@ async function init(){
     TR=merged; LG=lg;
 
     const teams=KP.map(r=>r.Team).sort((a,b)=>a.localeCompare(b));
-    awaySel.innerHTML=teams.map(t=>`<option>${t}</option>`).join("");
-    homeSel.innerHTML=teams.map(t=>`<option>${t}</option>`).join("");
-    awaySel.disabled=false; homeSel.disabled=false; runBtn.disabled=false; saveBtn.disabled=true;
 
+    // If using type-to-search
+    if (teamList && awayInput && homeInput) {
+      populateTeamDatalist(teams);
+      awayInput.value = teams[0] || "";
+      homeInput.value = teams[1] || "";
+    } else if (awaySel && homeSel) {
+      awaySel.innerHTML=teams.map(t=>`<option>${t}</option>`).join("");
+      homeSel.innerHTML=teams.map(t=>`<option>${t}</option>`).join("");
+      awaySel.disabled=false; homeSel.disabled=false;
+    }
+
+    runBtn.disabled=false; saveBtn.disabled=true;
     statusEl.textContent="Ready.";
   }catch(e){
     console.error(e); statusEl.textContent="Load error. See console."; alert("Data load error:\n"+e.message);
@@ -426,7 +435,17 @@ async function init(){
 
 runBtn.addEventListener("click",()=>{
   try{
-    const away=awaySel.value, home=homeSel.value;
+    const teamsAll = KP.map(r=>r.Team);
+    // team pickers: datalist > select
+    let away="", home="";
+    if (teamList && awayInput && homeInput) {
+      away = resolveTeam(awayInput.value, teamsAll);
+      home = resolveTeam(homeInput.value, teamsAll);
+    } else if (awaySel && homeSel) {
+      away = awaySel.value;
+      home = homeSel.value;
+    }
+
     if(!away||!home){ alert("Please select valid teams."); return; }
     if(teamKey(away)===teamKey(home)){ alert("Select two different teams."); return; }
 
@@ -436,107 +455,90 @@ runBtn.addEventListener("click",()=>{
     const bookSpread = hasBookSpread ? Number(spreadInput.value) : null;
     const bookTotal  = hasBookTotal  ? Number(totalInput.value)  : null;
 
-    // Pure model inputs (no book influence)
+    // Deterministic model
     const {poss,pppA,pppH}=baseParams(away,home);
+    const detA = pppA * poss;
+    const detH = pppH * poss + HOME_EDGE_POINTS;
 
-    // Guards so the sim never NaNs
-    const gPoss = Number.isFinite(poss) ? poss : 69.5;
-    const gA    = Number.isFinite(pppA) ? pppA : (LEAGUE_AVG_ADJ/100.0);
-    const gH    = Number.isFinite(pppH) ? pppH : (LEAGUE_AVG_ADJ/100.0);
+    // Render immediate results
+    const winner = detH >= detA ? home : away;
+    const line = detH>=detA
+      ? `${home} ${Math.round(detH)} – ${away} ${Math.round(detA)}`
+      : `${away} ${Math.round(detA)} – ${home} ${Math.round(detH)}`;
 
-    // Deterministic preview
-    const detA = gA*gPoss;
-    const detH = gH*gPoss + HOME_EDGE_POINTS;
+    const modelTotal = detA + detH;
+    const modelSpreadHome = detH - detA;
 
-    resultBody.innerHTML=`
-      <p><strong>Prediction (model-only):</strong> ${detH>=detA?`${home} ${Math.round(detH)} – ${away} ${Math.round(detA)}`:`${away} ${Math.round(detA)} – ${home} ${Math.round(detH)}`}</p>
-      <p><strong>Projected Winner:</strong> ${detH>=detA?home:away}</p>
-      <p><span class="badge gray">Running 1000-sim Monte Carlo…</span></p>`;
-    resultsSec.classList.remove("hidden"); saveBtn.disabled=true;
+    // Compare to book if entered
+    let edgesHTML="", savePayload={};
+    if(hasBookSpread || hasBookTotal){
+      let totalEdge=null, spreadEdge=null;
+      let totalPlay="—", spreadPlay="—";
 
-    const w=new Worker(workerURL);
-    w.postMessage({poss:gPoss, pppA:gA, pppH:gH, homeEdge:HOME_EDGE_POINTS, nSims:1000, possSD:POSS_SD, pppSD:PPP_SD});
-    w.onmessage=(ev)=>{
-      const {mA,mH,qA25,qA75,qH25,qH75,homeWinPct}=ev.data;
-
-      const modelTotal=mA+mH;
-      const modelSpreadHome=mH-mA;
-
-      let edgesHTML="", savePayload={};
-      if(hasBookSpread || hasBookTotal){
-        let totalEdge=null, spreadEdge=null;
-        let totalPlay="—", spreadPlay="—";
-
-        if(hasBookTotal && Number.isFinite(bookTotal)){
-          totalEdge = modelTotal - bookTotal;
-          if(totalEdge>=2.0) totalPlay=`OVER ${bookTotal.toFixed(1)}`;
-          else if(totalEdge<=-2.0) totalPlay=`UNDER ${bookTotal.toFixed(1)}`;
-          else totalPlay="NO BET";
-        }
-        if(hasBookSpread && Number.isFinite(bookSpread)){
-          const bookHomeEdge = -bookSpread;
-          spreadEdge = modelSpreadHome - bookHomeEdge;
-          if(spreadEdge>=1.5) spreadPlay=`${home} ${bookSpread.toFixed(1)}`;
-          else if(spreadEdge<=-1.5) spreadPlay=`${away} ${(-bookSpread).toFixed(1)}`;
-          else spreadPlay="NO BET";
-        }
-        const conf = (() => {
-          const mag = Math.max(Math.abs(spreadEdge ?? 0), Math.abs(totalEdge ?? 0));
-          return Math.round(1 + 9 * Math.min(Math.abs(mag)/6.0, 1));
-        })();
-
-        edgesHTML = `
-          ${hasBookTotal ? `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)} &nbsp; <strong>Book Total:</strong> ${bookTotal.toFixed(1)}</p>` : `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>`}
-          ${hasBookSpread ? `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)} &nbsp; <strong>Book Spread (Home):</strong> ${(bookSpread>=0?"+":"")+bookSpread.toFixed(1)}</p>` : `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>`}
-          ${hasBookTotal ? `<p><strong>Totals Play:</strong> ${totalPlay}</p>` : ``}
-          ${hasBookSpread ? `<p><strong>Spread Play:</strong> ${spreadPlay}</p>` : ``}
-          <p><strong>Likely Ranges (25–75%):</strong> ${away} ${fmt1(qA25)}–${fmt1(qA75)} | ${home} ${fmt1(qH25)}–${fmt1(qH75)}</p>
-          <div><strong>Prediction Confidence:</strong> ${badge( (hasBookTotal||hasBookSpread)?`${conf} / 10`:"Model-only", (hasBookTotal||hasBookSpread)?(conf>=7?"green":conf>=4?"gray":"red"):"gray")}</div>
-        `;
-
-        savePayload = {
-          "Book Spread (Home)": hasBookSpread ? (bookSpread>=0?"+":"")+bookSpread.toFixed(1) : "",
-          "Book Total": hasBookTotal ? bookTotal.toFixed(1) : "",
-          "Total Edge": hasBookTotal ? fmt1(totalEdge) : "",
-          "Spread Edge": hasBookSpread ? fmt1(spreadEdge) : "",
-          "Totals Play": hasBookTotal ? totalPlay : "",
-          "Spread Play": hasBookSpread ? spreadPlay : "",
-          "Confidence (1-10)": (hasBookTotal||hasBookSpread)? conf : ""
-        };
-      } else {
-        edgesHTML = `
-          <p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>
-          <p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>
-          <p><strong>Likely Ranges (25–75%):</strong> ${away} ${fmt1(qA25)}–${fmt1(qA75)} | ${home} ${fmt1(qH25)}–${fmt1(qH75)}</p>
-          <div><strong>Prediction Confidence:</strong> ${badge("Model-only","gray")}</div>
-        `;
+      if(hasBookTotal && Number.isFinite(bookTotal)){
+        totalEdge = modelTotal - bookTotal;
+        if(totalEdge>=2.0) totalPlay=`OVER ${bookTotal.toFixed(1)}`;
+        else if(totalEdge<=-2.0) totalPlay=`UNDER ${bookTotal.toFixed(1)}`;
+        else totalPlay="NO BET";
       }
+      if(hasBookSpread && Number.isFinite(bookSpread)){
+        const bookHomeEdge = -bookSpread;
+        spreadEdge = modelSpreadHome - bookHomeEdge;
+        if(spreadEdge>=1.5)      spreadPlay=`${home} ${bookSpread.toFixed(1)}`;
+        else if(spreadEdge<=-1.5) spreadPlay=`${away} ${(-bookSpread).toFixed(1)}`;
+        else                      spreadPlay="NO BET";
+      }
+      const conf = (() => {
+        const mag = Math.max(Math.abs(spreadEdge ?? 0), Math.abs(totalEdge ?? 0));
+        return Math.round(1 + 9 * Math.min(Math.abs(mag)/6.0, 1));
+      })();
 
-      const winner=mH>=mA?home:away;
-      const line=mH>=mA?`${home} ${Math.round(mH)} – ${away} ${Math.round(mA)}`:`${away} ${Math.round(mA)} – ${home} ${Math.round(mH)}`;
-
-      resultBody.innerHTML=`
-        <p><strong>Prediction (model-only):</strong> ${line}</p>
-        <p><strong>Projected Winner:</strong> ${winner}</p>
-        <p><strong>Win Probability:</strong> ${home} ${(homeWinPct*100).toFixed(0)}%  –  ${away} ${((1-homeWinPct)*100).toFixed(0)}%</p>
-        ${edgesHTML}
+      edgesHTML = `
+        ${hasBookTotal ? `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)} &nbsp; <strong>Book Total:</strong> ${bookTotal.toFixed(1)}</p>` : `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>`}
+        ${hasBookSpread ? `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)} &nbsp; <strong>Book Spread (Home):</strong> ${(bookSpread>=0?"+":"")+bookSpread.toFixed(1)}</p>` : `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>`}
+        ${hasBookTotal ? `<p><strong>Totals Play:</strong> ${totalPlay}</p>` : ``}
+        ${hasBookSpread ? `<p><strong>Spread Play:</strong> ${spreadPlay}</p>` : ``}
+        <div><strong>Prediction Confidence:</strong> ${badge( (hasBookTotal||hasBookSpread)?`${conf} / 10`:"Model-only","gray")}</div>
       `;
 
-      saveBtn.disabled=false;
-      saveBtn.onclick=()=>{
-        savedGames.push({
-          Away:away, Home:home,
-          "Model Away Pts":fmt1(mA),
-          "Model Home Pts":fmt1(mH),
-          "Model Total":fmt1(modelTotal),
-          "Model Spread (Home)":fmt1(modelSpreadHome),
-          ...savePayload
-        });
-        persistSaved();
+      savePayload = {
+        "Book Spread (Home)": hasBookSpread ? (bookSpread>=0?"+":"")+bookSpread.toFixed(1) : "",
+        "Book Total": hasBookTotal ? bookTotal.toFixed(1) : "",
+        "Total Edge": hasBookTotal ? fmt1(totalEdge) : "",
+        "Spread Edge": hasBookSpread ? fmt1(spreadEdge) : "",
+        "Totals Play": hasBookTotal ? totalPlay : "",
+        "Spread Play": hasBookSpread ? spreadPlay : "",
+        "Confidence (1-10)": (hasBookTotal||hasBookSpread)? conf : ""
       };
+    } else {
+      edgesHTML = `
+        <p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>
+        <p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>
+        <div><strong>Prediction Confidence:</strong> ${badge("Model-only","gray")}</div>
+      `;
+    }
 
-      w.terminate();
+    resultsSec.classList.remove("hidden");
+    resultBody.innerHTML=`
+      <p><strong>Prediction (model-only):</strong> ${line}</p>
+      <p><strong>Projected Winner:</strong> ${winner}</p>
+      ${edgesHTML}
+    `;
+
+    // Save row
+    saveBtn.disabled=false;
+    saveBtn.onclick=()=>{
+      savedGames.push({
+        Away:away, Home:home,
+        "Model Away Pts":fmt1(detA),
+        "Model Home Pts":fmt1(detH),
+        "Model Total":fmt1(modelTotal),
+        "Model Spread (Home)":fmt1(modelSpreadHome),
+        ...savePayload
+      });
+      persistSaved();
     };
+
   }catch(e){ console.error(e); alert("Run error:\n" + e.message); }
 });
 
