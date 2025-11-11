@@ -46,6 +46,12 @@ const TOTAL_STRETCH = 0.08; // 0.05–0.12 widens totals via O/D strength
 // Strength-gap booster
 const BOOSTER_K = 0.0055;   // 0.004–0.006
 
+// AdjEM → spread correction knobs
+const EM_TO_SPREAD_K   = 1.00; // spread target from AdjEM: em_gap * (poss/100)
+const EM_SPREAD_WEIGHT = 0.85; // 0..1; how much to pull toward AdjEM spread
+const MIN_PPP = 0.85;          // PPP clamps (keep totals sane)
+const MAX_PPP = 1.25;
+
 // TR feature weights (slightly stronger)
 const W_EFG = 0.50;
 const W_TOV = 0.30;
@@ -206,7 +212,7 @@ async function loadTR(urls,w25,w24){
 }
 
 /* =========================================================
-   Safe KenPom fetch + deterministic params with stretch/booster
+   Safe KenPom fetch + deterministic params with stretch/booster + AdjEM correction
    ========================================================= */
 function safeKPFor(name){
   const kname = teamKey(name);
@@ -229,7 +235,7 @@ function safeKPFor(name){
   return { Team: k?.Team || t?.Team || name, AdjO: adjO, AdjD: adjD, AdjT: adjT };
 }
 
-// === baseParams with pace/total stretch + strength booster + TR style ===
+// === baseParams with pace/total stretch + strength booster + TR style + AdjEM spread correction ===
 function baseParams(away, home) {
   const A = safeKPFor(away);
   const H = safeKPFor(home);
@@ -316,6 +322,37 @@ function baseParams(away, home) {
 
     pppA *= Math.pow(off_mult_A, damp) * Math.pow(def_mult_H, damp);
     pppH *= Math.pow(off_mult_H, damp) * Math.pow(def_mult_A, damp);
+  }
+
+  // --- AdjEM-blended spread correction (fix margin, preserve total)
+  {
+    // current spread from model
+    const s_model = (pppH - pppA) * poss + HOME_EDGE_POINTS;
+
+    // AdjEM gap (per 100)
+    const emA = A.AdjO - A.AdjD;
+    const emH = H.AdjO - H.AdjD;
+    const em_gap = emH - emA;
+
+    // target spread from AdjEM (points), add HCA after
+    const s_em_raw = EM_TO_SPREAD_K * em_gap * (poss / 100);
+    const s_em = s_em_raw + HOME_EDGE_POINTS;
+
+    // blend to target
+    const s_target = (1 - EM_SPREAD_WEIGHT) * s_model + EM_SPREAD_WEIGHT * s_em;
+
+    // preserve total while adjusting diff
+    const sum_ppp = pppA + pppH;
+    let diff_ppp = (s_target - HOME_EDGE_POINTS) / Math.max(poss, 1e-6);
+    const cap = Math.max(1e-6, sum_ppp - 1e-3);
+    if (Math.abs(diff_ppp) >= cap) diff_ppp = Math.sign(diff_ppp) * (cap - 1e-6);
+
+    let pH = (sum_ppp + diff_ppp) / 2;
+    let pA = (sum_ppp - diff_ppp) / 2;
+
+    // clamp PPPs
+    pppH = Math.min(MAX_PPP, Math.max(MIN_PPP, pH));
+    pppA = Math.min(MAX_PPP, Math.max(MIN_PPP, pA));
   }
 
   // Guards (never return NaN)
