@@ -340,27 +340,7 @@ function baseParams(away,home){
     pppH*=off_mult_H*def_mult_A;
   }
 
-  // AdjEM spread correction (preserve total + skew)
-  const s_model = (pppH-pppA)*poss + HOME_EDGE_POINTS;
-  const em_gap = (H.AdjO-H.AdjD) - (A.AdjO-A.AdjD);
-  const s_em = EM_TO_SPREAD_K * em_gap * (poss/100) + HOME_EDGE_POINTS;
-  const s_target = (1-EM_SPREAD_WEIGHT)*s_model + EM_SPREAD_WEIGHT*s_em;
-
-  const sum0 = pppA+pppH;
-  let diff_ppp = (s_target - HOME_EDGE_POINTS)/Math.max(poss,1e-6);
-  const cap = Math.max(1e-6, sum0-1e-3);
-  if(Math.abs(diff_ppp)>=cap) diff_ppp = Math.sign(diff_ppp)*(cap-1e-6);
-
-  let pH = (sum0+diff_ppp)/2, pA=(sum0-diff_ppp)/2;
-  const skew = Math.max(-0.6, Math.min(0.6, em_gap/40));
-  const total_ppp = Math.max(1e-6, pH+pA);
-  pH = total_ppp*(0.5+skew/2); pA = total_ppp*(0.5-skew/2);
-
-  pH = Math.min(MAX_PPP, Math.max(MIN_PPP, pH));
-  pA = Math.min(MAX_PPP, Math.max(MIN_PPP, pA));
-
-  return { poss: poss||LGE_TEMPO, pppA: pA||BASE_PPP, pppH: pH||BASE_PPP };
-}
+  
 
 /* =========================================================
    Saved games table
