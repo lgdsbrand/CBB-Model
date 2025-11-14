@@ -340,7 +340,86 @@ function baseParams(away,home){
     pppH*=off_mult_H*def_mult_A;
   }
 
-  
+  function baseParams(away, home){
+  const A = safeKPFor(away);
+  const H = safeKPFor(home);
+
+  // --- possessions from tempo + small pace stretch ---
+  let poss = 0.5 * (A.AdjT + H.AdjT);
+  const tempo_dev = ((A.AdjT + H.AdjT) / 2 - LGE_TEMPO) / LGE_TEMPO;
+  poss *= 1 + PACE_STRETCH * tempo_dev;
+  if (!Number.isFinite(poss) || poss <= 0) poss = LGE_TEMPO;
+
+  // --- base PPP from KenPom only ---
+  let pppA = BASE_PPP * (A.AdjO / LEAGUE_AVG_ADJ) * (LEAGUE_AVG_ADJ / H.AdjD);
+  let pppH = BASE_PPP * (H.AdjO / LEAGUE_AVG_ADJ) * (LEAGUE_AVG_ADJ / A.AdjD);
+
+  // --- TR tweaks if we have them (same logic as before) ---
+  if (TR && LG) {
+    const rA = TR.find(r => r._team_key === teamKey(away)) || TR.find(r => teamKey(r.Team).includes(teamKey(away)));
+    const rH = TR.find(r => r._team_key === teamKey(home)) || TR.find(r => teamKey(r.Team).includes(teamKey(home)));
+
+    const getv = (r, n, d) => (r && Number.isFinite(Number(r[n])) ? Number(r[n]) : d);
+
+    const A_OFF_EFF = getv(rA, "OFF_EFF", LG.OFF_EFF);
+    const A_OFF_EFG = getv(rA, "OFF_EFG", LG.OFF_EFG);
+    const A_OFF_REB = getv(rA, "OFF_REB", LG.OFF_REB);
+    const A_TOV     = getv(rA, "TOV_POSS", LG.TOV_POSS);
+
+    const H_DEF_EFF = getv(rH, "DEF_EFF", LG.DEF_EFF);
+    const H_DEF_REB = getv(rH, "DEF_REB", LG.DEF_REB);
+
+    const H_OFF_EFF = getv(rH, "OFF_EFF", LG.OFF_EFF);
+    const H_OFF_EFG = getv(rH, "OFF_EFG", LG.OFF_EFG);
+    const H_OFF_REB = getv(rH, "OFF_REB", LG.OFF_REB);
+    const H_TOV     = getv(rH, "TOV_POSS", LG.TOV_POSS);
+
+    const A_DEF_EFF = getv(rA, "DEF_EFF", LG.DEF_EFF);
+    const A_DEF_REB = getv(rA, "DEF_REB", LG.DEF_REB);
+
+    const eff_anchor_A  = Math.max(A_OFF_EFF, 1e-6) / Math.max(LG.OFF_EFF, 1e-6);
+    const eff_anchor_Hd = Math.max(LG.DEF_EFF, 1e-6) / Math.max(H_DEF_EFF, 1e-6);
+    const eff_anchor_Ho = Math.max(H_OFF_EFF, 1e-6) / Math.max(LG.OFF_EFF, 1e-6);
+    const eff_anchor_Ad = Math.max(LG.DEF_EFF, 1e-6) / Math.max(A_DEF_EFF, 1e-6);
+
+    const off_mult_A =
+      Math.pow(eff_anchor_A, 0.75) *
+      Math.pow(A_OFF_EFG / Math.max(LG.OFF_EFG, 1e-6), W_EFG) *
+      Math.pow((1 - A_TOV) / Math.max(1e-6, 1 - LG.TOV_POSS), W_TOV) *
+      Math.pow(A_OFF_REB / Math.max(LG.OFF_REB, 1e-6), W_REB);
+
+    const def_mult_H =
+      Math.pow(eff_anchor_Hd, 0.75) *
+      Math.pow(H_DEF_REB / Math.max(LG.DEF_REB, 1e-6), W_REB);
+
+    const off_mult_H =
+      Math.pow(eff_anchor_Ho, 0.75) *
+      Math.pow(H_OFF_EFG / Math.max(LG.OFF_EFG, 1e-6), W_EFG) *
+      Math.pow((1 - H_TOV) / Math.max(1e-6, 1 - LG.TOV_POSS), W_TOV) *
+      Math.pow(H_OFF_REB / Math.max(LG.OFF_REB, 1e-6), W_REB);
+
+    const def_mult_A =
+      Math.pow(eff_anchor_Ad, 0.75) *
+      Math.pow(A_DEF_REB / Math.max(LG.DEF_REB, 1e-6), W_REB);
+
+    pppA *= off_mult_A * def_mult_H;
+    pppH *= off_mult_H * def_mult_A;
+  }
+
+  // --- small AdjEM-based bias to create spread variance ---
+  const emA = A.AdjO - A.AdjD;
+  const emH = H.AdjO - H.AdjD;
+  const emGap = (emH - emA) / 100;  // per-100-pos gap to per-pos
+
+  pppH *= Math.exp(BOOSTER_K * emGap);
+  pppA *= Math.exp(-BOOSTER_K * emGap);
+
+  // --- clamp PPP so nothing gets insane ---
+  pppA = Math.min(MAX_PPP, Math.max(MIN_PPP, pppA));
+  pppH = Math.min(MAX_PPP, Math.max(MIN_PPP, pppH));
+
+  return { poss, pppA, pppH };
+}
 
 /* =========================================================
    Saved games table
