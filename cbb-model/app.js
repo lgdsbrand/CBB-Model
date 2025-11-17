@@ -18,9 +18,9 @@
   Example:
     TR_PPG_URL  = "https://docs.google.com/...&gid=XXXXX&single=true&output=csv";
 */
-const TR_PPG_URL   = "YOUR_TR_PPG_CSV_URL_HERE";
-const TR_OPPG_URL  = "YOUR_TR_OPPG_CSV_URL_HERE";
-const TR_POSS_URL  = "YOUR_TR_POSS_CSV_URL_HERE";
+const TR_PPG_URL   = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1113850959&single=true&output=csv";
+const TR_OPPG_URL  = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1318289545&single=true&output=csv";
+const TR_POSS_URL  = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1494766046&single=true&output=csv";
 
 const TR_OFF_EFF_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1940805537&single=true&output=csv";
 const TR_DEF_EFF_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=2137299930&single=true&output=csv";
@@ -39,14 +39,14 @@ const TR_EFG_URL     = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6
     ESPN:        "Connecticut Huskies"
     Display:     "Connecticut"
 */
-const TEAM_MAP_URL = "YOUR_TEAM_NAME_MAP_CSV_URL_HERE";
+const TEAM_MAP_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1061863749&single=true&output=csv";
 
 /*
   Daily games CSV built by Apps Script from ESPN scoreboard.
   Tab header (case-insensitive) expected:
     Date, Time, Away, Home, BookSpreadHome, BookTotal, BookName, EspnId
 */
-const CBB_GAMES_URL = "YOUR_CBB_GAMES_CSV_URL_HERE";
+const CBB_GAMES_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1912820604&single=true&output=csv";
 
 /* ---------- TR column layout ---------- */
 
