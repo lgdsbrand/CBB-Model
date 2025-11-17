@@ -1,137 +1,118 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover"
-  />
-  <title>CBB Model – KenPom + TeamRankings</title>
-  <meta name="theme-color" content="#0b1321" />
-  <style>
-    :root {
-      --bg: #0b1321;
-      --panel: #121a2b;
-      --panel-2: #0f1727;
-      --text: #dbe1f5;
-      --muted: #9aa6c8;
-      --accent: #63c3ff;
-      --green: #28c76f;
-      --red: #ff5c7a;
-      --gray: #7687a8;
-      --border: #233050;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-    a { color: var(--accent); text-decoration: none; }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
-    .card { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    h1 { font-size: 22px; margin: 0 0 8px; }
-    h2 { font-size: 18px; margin: 0 0 12px; color: var(--muted); font-weight: 600; }
-    label { display:block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
-    input, select, button {
-      width: 100%; padding: 12px 12px; border-radius: 8px; border: 1px solid var(--border);
-      background: #0a1120; color: var(--text); font-size: 14px; outline: none;
-    }
-    input::placeholder { color: #6c7aa1; }
-    input:focus { border-color: var(--accent); }
-    .row { display: grid; grid-template-columns: 1fr; gap: 12px; }
-    @media (min-width: 720px) {
-      .row-2 { grid-template-columns: 1fr 1fr; }
-      .row-3 { grid-template-columns: 1fr 1fr 1fr; }
-    }
-    .btn { cursor: pointer; border: 1px solid var(--border); font-weight: 600; }
-    .btn.primary { background: #0e203a; border-color: #1f2f54; }
-    .btn.secondary { background: #0b1730; }
-    .btn.danger { background: #2a0e18; border-color: #4b1b2a; }
-    .btn:disabled { opacity: .6; cursor: not-allowed; }
-    .muted { color: var(--muted); }
-    .toolbar { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-    .status { font-size: 13px; color: var(--muted); }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: #0b1730; color: var(--text); }
-    .badge.green { background: rgba(40, 199, 111, .15); color: #9ff4c8; border-color: rgba(40,199,111,.4); }
-    .badge.red { background: rgba(255, 92, 122, .15); color: #ffc0cc; border-color: rgba(255, 92, 122, .4); }
-    .badge.gray { background: rgba(118, 135, 168, .15); color: #d0d8ea; border-color: rgba(118, 135, 168, .4); }
-    .hidden { display: none; }
-    .tableWrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
-    table { width: 100%; border-collapse: collapse; min-width: 840px; }
-    th, td { border-bottom: 1px solid var(--border); padding: 10px 12px; text-align: left; font-size: 14px; }
-    thead th { color: var(--muted); font-weight: 600; }
-    .stack p { margin: 8px 0; }
-    .grid-slim { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    @media (min-width: 720px) { .grid-slim { grid-template-columns: 1fr 1fr 1fr 1fr; } }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CBB TeamRankings Model</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>College Basketball Model</h1>
-      <div class="status">Status: <span id="status">Loading…</span></div>
+  <header class="top-header">
+    <div>
+      <h1>CBB TeamRankings Model</h1>
+      <p class="subtitle">Division I projections using TeamRankings stats</p>
     </div>
+    <div id="status" class="status">Loading…</div>
+  </header>
 
-    <div class="card">
-      <h2>Matchup</h2>
-
-      <!-- Type-to-search team inputs -->
-      <div class="row row-2">
-        <div>
-          <label for="awayTeamInput">Away</label>
-          <input id="awayTeamInput" list="teamList" placeholder="Start typing a team…" autocomplete="off" />
-        </div>
-        <div>
-          <label for="homeTeamInput">Home</label>
-          <input id="homeTeamInput" list="teamList" placeholder="Start typing a team…" autocomplete="off" />
-        </div>
-      </div>
-      <!-- Shared datalist filled by app.js -->
-      <datalist id="teamList"></datalist>
-
-      <!-- Optional book lines (comparison only) -->
-      <div style="margin-top:12px" class="row row-2">
-        <div>
-          <label for="bookSpread">Book Spread (Home)</label>
-          <input id="bookSpread" inputmode="decimal" placeholder="-5.5 (optional)" />
-        </div>
-        <div>
-          <label for="bookTotal">Book Total</label>
-          <input id="bookTotal" inputmode="decimal" placeholder="145.5 (optional)" />
-        </div>
-      </div>
-
-      <div style="margin-top:12px" class="toolbar">
-        <button id="runBtn" class="btn primary" disabled>Run Model</button>
-        <button id="saveBtn" class="btn secondary" disabled>Save Result</button>
-        <button id="downloadBtn" class="btn secondary">Download Saved CSV</button>
-      </div>
-      <div style="margin-top:8px" class="grid-slim">
-        <button id="undoBtn" class="btn secondary">Undo Last</button>
-        <button id="clearBtn" class="btn danger">Clear Saved</button>
-      </div>
-    </div>
-
-    <div id="results" class="card hidden">
-      <h2>Result</h2>
-      <div id="resultBody" class="stack">
-        <!-- filled by app.js -->
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Saved Games</h2>
-      <div id="savedTableWrap">
-        <p class="muted">No games saved yet.</p>
-      </div>
-    </div>
-
-    <div class="card">
-      <p class="muted">
-        Model uses KenPom (AdjO/AdjD/AdjT) + TeamRankings (OFF_EFF, DEF_EFF, OFF/DEF REB%, TOV/poss, OFF eFG%).
-        Spread & Total are projected from stats; book lines are optional for edges.
-      </p>
-    </div>
+  <!-- Mode toggle -->
+  <div class="mode-toggle">
+    <button id="btnManual" class="mode-btn active">Manual Model</button>
+    <button id="btnEspn" class="mode-btn">ESPN Daily Games</button>
   </div>
 
-  <!-- Your app logic -->
-  <script src="./app.js"></script>
+  <!-- Manual section -->
+  <section id="manualSection" class="card-block">
+    <h2>Manual Matchup</h2>
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="awayTeamInput">Away Team</label>
+        <input
+          list="teamList"
+          id="awayTeamInput"
+          type="text"
+          placeholder="Type or pick a team"
+        />
+      </div>
+
+      <div class="form-field">
+        <label for="homeTeamInput">Home Team</label>
+        <input
+          list="teamList"
+          id="homeTeamInput"
+          type="text"
+          placeholder="Type or pick a team"
+        />
+      </div>
+    </div>
+
+    <datalist id="teamList"></datalist>
+
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="bookSpread">Book Spread (Home)</label>
+        <input
+          id="bookSpread"
+          type="number"
+          step="0.5"
+          placeholder="-7.5"
+        />
+      </div>
+
+      <div class="form-field">
+        <label for="bookTotal">Book Total</label>
+        <input
+          id="bookTotal"
+          type="number"
+          step="0.5"
+          placeholder="145.5"
+        />
+      </div>
+    </div>
+
+    <div class="button-row">
+      <button id="runBtn" class="primary" disabled>Run Model</button>
+      <button id="saveBtn" class="secondary" disabled>Save Game</button>
+    </div>
+
+    <section id="results" class="results-card hidden">
+      <h3>Result</h3>
+      <div id="resultBody"></div>
+    </section>
+
+    <section class="saved-section">
+      <div class="saved-header-row">
+        <h3>Saved Games</h3>
+        <div class="button-row compact">
+          <button id="downloadBtn" class="secondary">Download CSV</button>
+          <button id="undoBtn" class="secondary">Undo Last</button>
+          <button id="clearBtn" class="secondary danger">Clear All</button>
+        </div>
+      </div>
+      <div id="savedTableWrap" class="table-container"></div>
+    </section>
+  </section>
+
+  <!-- ESPN / Sheet section -->
+  <section id="espnSection" class="card-block hidden">
+    <h2>Today&#39;s Games (ESPN &amp; TeamRankings)</h2>
+    <p class="muted">
+      Games are scraped to your <strong>CBB_Games</strong> sheet with Apps Script,
+      then projected here using the same model.
+    </p>
+    <div class="button-row">
+      <button id="reloadEspnBtn" class="primary">Reload Today&#39;s Games</button>
+    </div>
+
+    <div id="dailyCards" class="cards-container">
+      <!-- Cards injected by app.js -->
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span class="muted">Powered by TeamRankings stats &amp; ESPN schedule</span>
+  </footer>
+
+  <script src="app.js"></script>
 </body>
 </html>
