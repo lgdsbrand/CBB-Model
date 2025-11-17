@@ -1,60 +1,370 @@
-:root {
-  --bg: #0e0f12;
-  --panel: #151821;
-  --muted: #a4acb9;
-  --text: #f2f5f9;
-  --accent: #69e08a;
-  --accent2: #7ab8ff;
-  --danger: #ff7a7a;
-  --warn: #ffd466;
-  --radius: 12px;
+/* ---------- Base layout ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; }
-
-.container { max-width: 980px; margin: 0 auto; padding: 16px; }
-.header { margin: 8px 0 16px; }
-.header h1 { margin: 0 0 4px; font-size: 22px; }
-.header p { margin: 0; color: var(--muted); font-size: 14px; }
-
-.card { background: var(--panel); border-radius: var(--radius); padding: 14px; margin: 12px 0; box-shadow: 0 1px 0 rgba(255,255,255,0.03), 0 8px 24px rgba(0,0,0,0.35); }
-.card h2 { margin: 0 0 10px; font-size: 18px; }
-
-.grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
-@media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
-
-label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-select, input[type="text"] {
-  width: 100%; padding: 10px 12px; background: #0f1218; color: var(--text);
-  border: 1px solid #232737; border-radius: 10px; outline: none;
+html,
+body {
+  margin: 0;
+  padding: 0;
 }
-select:disabled, button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #0b0c10;
+  color: #f5f5f5;
+  padding: 16px;
+}
+
+@media (min-width: 768px) {
+  body {
+    padding: 24px 32px;
+  }
+}
+
+/* ---------- Header ---------- */
+
+.top-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.top-header h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #a0a4b8;
+}
+
+.status {
+  font-size: 0.85rem;
+  color: #c0c4d8;
+  margin-top: 6px;
+}
+
+@media (min-width: 768px) {
+  .top-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+}
+
+/* ---------- Mode toggle ---------- */
+
+.mode-toggle {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #2e3340;
+  background: #151823;
+  color: #e5e7f0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    transform 0.05s ease;
+}
+
+.mode-btn:hover {
+  transform: translateY(-1px);
+  background: #1e2433;
+}
+
+.mode-btn.active {
+  background: #00b894;
+  color: #041013;
+  border-color: #00b894;
+}
+
+/* ---------- Cards / sections ---------- */
+
+.card-block {
+  background: #101319;
+  border-radius: 12px;
+  padding: 14px 14px 16px;
+  border: 1px solid #222633;
+  margin-bottom: 16px;
+}
+
+.card-block h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+}
+
+/* ---------- Forms ---------- */
+
+.form-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.form-field {
+  flex: 1;
+  min-width: 140px;
+}
+
+label {
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+  color: #a0a4b8;
+}
+
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid #262b38;
+  background: #151823;
+  color: #f5f5f5;
+  font-size: 0.9rem;
+}
+
+input[type="text"]::placeholder,
+input[type="number"]::placeholder {
+  color: #5d647a;
+}
+
+/* ---------- Buttons ---------- */
+
 button {
-  appearance: none; border: 1px solid #232737; background: #111522; color: var(--text);
-  padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 600;
+  font-family: inherit;
+  border: none;
 }
-button:hover { border-color: #2e3550; }
-button.primary { background: #192235; border-color: #2c3a63; }
-button.success { background: #13291c; border-color: #2a5a3c; color: #d9ffe8; }
-button.warn { background: #2c2615; border-color: #5b4a18; color: #fff0c1; }
-button.danger { background: #2a1818; border-color: #5a2c2c; color: #ffe2e2; }
 
-.stack { display: grid; gap: 8px; }
-.stack p { margin: 0; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #2d3348; }
-.badge.green { background: #0e2317; color: #b4ffd3; border-color: #27543c; }
-.badge.red { background: #2a1515; color: #ffd4d4; border-color: #583131; }
-.badge.gray { background: #151922; color: #bfc8d8; border-color: #2c3246; }
-
-.tableWrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-thead th {
-  text-align: left; padding: 8px; font-size: 12px; color: var(--muted); background: #10131a; position: sticky; top: 0;
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 10px;
 }
-tbody td { padding: 8px; border-top: 1px solid #252a3a; font-size: 13px; }
-.muted { color: var(--muted); }
-.footer { opacity: 0.7; font-size: 12px; padding: 6px 2px; text-align: center; }
-.hidden { display: none; }
+
+.button-row.compact {
+  margin: 0;
+}
+
+button.primary,
+button.secondary,
+button.danger {
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease, box-shadow 0.1s ease;
+}
+
+button.primary {
+  background: #00b894;
+  color: #041013;
+}
+
+button.primary:hover {
+  background: #00d1a7;
+  box-shadow: 0 0 0 1px rgba(0, 184, 148, 0.55);
+}
+
+button.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+}
+
+button.secondary {
+  background: #1a1e29;
+  color: #e5e7f0;
+  border: 1px solid #2e3340;
+}
+
+button.secondary:hover {
+  background: #232836;
+}
+
+button.secondary.danger {
+  color: #ffb3b3;
+  border-color: #7f1d1d;
+  background: #241318;
+}
+
+button.secondary.danger:hover {
+  background: #34171f;
+}
+
+/* ---------- Results card ---------- */
+
+.results-card {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #141925;
+  border: 1px solid #262b38;
+}
+
+.results-card h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.results-card p {
+  margin: 4px 0;
+}
+
+/* ---------- Saved games table ---------- */
+
+.saved-section {
+  margin-top: 14px;
+}
+
+.saved-header-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.saved-header-row h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.table-container {
+  margin-top: 4px;
+  border-radius: 8px;
+  border: 1px solid #262b38;
+  overflow: hidden;
+}
+
+.table-container table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.78rem;
+  background: #0f1219;
+}
+
+.table-container th,
+.table-container td {
+  border: 1px solid #262b38;
+  padding: 4px 5px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.table-container th {
+  background: #151823;
+  font-weight: 600;
+  color: #c0c4d8;
+}
+
+.table-container tr:nth-child(even) {
+  background: #11141c;
+}
+
+/* ---------- ESPN cards ---------- */
+
+.cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.game-card {
+  border-radius: 10px;
+  border: 1px solid #262b38;
+  background: #141925;
+  padding: 10px 12px;
+}
+
+.game-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.game-card .tip-time {
+  color: #a0a4b8;
+}
+
+.game-card .matchup {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.game-card .card-body p {
+  margin: 3px 0;
+  font-size: 0.86rem;
+}
+
+/* ---------- Badges & text helpers ---------- */
+
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.badge.green {
+  background: #c7f5cb;
+  color: #145c1f;
+}
+
+.badge.red {
+  background: #f7c0c0;
+  color: #751919;
+}
+
+.badge.gray {
+  background: #e2e5f0;
+  color: #33384a;
+}
+
+.muted {
+  color: #8a8fa5;
+  font-size: 0.84rem;
+}
+
+.error {
+  color: #ff6b81;
+  font-size: 0.84rem;
+}
+
+/* ---------- Utilities ---------- */
+
+.hidden {
+  display: none;
+}
+
+/* ---------- Footer ---------- */
+
+.footer {
+  margin-top: 12px;
+  font-size: 0.78rem;
+  color: #7b8198;
+  text-align: right;
+}
