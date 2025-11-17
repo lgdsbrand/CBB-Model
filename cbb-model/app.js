@@ -1,780 +1,818 @@
-/* =========================================================
-   CBB Model — TeamRankings only (no KenPom)
-   - Uses PPG, OPPG, Possessions to build ORtg/DRtg
-   - Uses extra TR stats (OFF_EFF, DEF_EFF, REB, TOV, EFG)
-   - Team name mapping (TR <-> ESPN)
-   - Two modes: Manual + ESPN Daily Games (from Sheet CSV)
-   ========================================================= */
+/* ============================================================
+   CONFIG – YOUR REAL CSV URLS
+   ============================================================ */
 
-/* ---------- URLs ---------- */
+// PPG / OPPG / Possessions
+const TR_PPG_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1113850959&single=true&output=csv";
+const TR_OPPG_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1318289545&single=true&output=csv";
+const TR_POSS_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1494766046&single=true&output=csv";
 
-/*
-  Fill these with your real TeamRankings publish-to-web CSV links.
-
-  Each CSV should have (at minimum):
-    B = Team name
-    C = current season value
-
-  Example:
-    TR_PPG_URL  = "https://docs.google.com/...&gid=XXXXX&single=true&output=csv";
-*/
-const TR_PPG_URL   = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1113850959&single=true&output=csv";
-const TR_OPPG_URL  = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1318289545&single=true&output=csv";
-const TR_POSS_URL  = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1494766046&single=true&output=csv";
-
-const TR_OFF_EFF_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1940805537&single=true&output=csv";
-const TR_DEF_EFF_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=2137299930&single=true&output=csv";
-const TR_OFF_REB_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=922672560&single=true&output=csv";
-const TR_DEF_REB_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=312492729&single=true&output=csv";
-const TR_TOV_URL     = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=993087389&single=true&output=csv";
-const TR_EFG_URL     = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=803704968&single=true&output=csv";
+// Advanced TR stats
+const TR_OFF_EFF_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1940805537&single=true&output=csv";
+const TR_DEF_EFF_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=2137299930&single=true&output=csv";
+const TR_OFF_REB_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=922672560&single=true&output=csv";
+const TR_DEF_REB_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=312492729&single=true&output=csv";
+const TR_TOV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=993087389&single=true&output=csv";
+const TR_EFG_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=803704968&single=true&output=csv";
 
 /*
   Team mapping CSV (TR names + ESPN names):
   Expected header (case-insensitive):
-    TeamRanking, ESPN, Display   (Display is optional but nice)
-
-  Example row:
-    TeamRanking: "UCONN"
-    ESPN:        "Connecticut Huskies"
-    Display:     "Connecticut"
+    TeamRanking, ESPN, Display   (Display optional but preferred)
 */
-const TEAM_MAP_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1061863749&single=true&output=csv";
+const TEAM_MAP_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1061863749&single=true&output=csv";
 
 /*
-  Daily games CSV built by Apps Script from ESPN scoreboard.
-  Tab header (case-insensitive) expected:
+  Daily games CSV from Apps Script:
+  Expected header (case-insensitive):
     Date, Time, Away, Home, BookSpreadHome, BookTotal, BookName, EspnId
 */
-const CBB_GAMES_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1912820604&single=true&output=csv";
+const CBB_GAMES_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1912820604&single=true&output=csv";
 
-/* ---------- TR column layout ---------- */
+/* ============================================================
+   MODEL PARAMETERS
+   ============================================================ */
 
-/*
-  For all TR CSVs we assume:
-    column B (index 1) = Team
-    column C (index 2) = main stat value
-*/
-const TEAM_COL_INDEX = 1;  // B
-const STAT_COL_INDEX = 2;  // C
+const HOME_EDGE_POINTS = 3.0; // home-court bump
+const TOTAL_EDGE_TH = 2.0; // pts vs book total to trigger play
+const SPREAD_EDGE_TH = 2.0; // pts vs book spread to trigger play
 
-/* ---------- Model knobs ---------- */
-
-const HOME_EDGE_POINTS = 3.5;
-const BASE_PPP         = 1.05;  // baseline points per possession
-const MIN_PPP          = 0.75;
-const MAX_PPP          = 1.40;
-
-// how much extra stats nudge offense
-const W_EFG = 0.55;
+// feature weights
+const W_EFG = 0.4;
 const W_TOV = 0.25;
-const W_REB = 0.20;
+const W_REB = 0.2;
 
-/* ---------- DOM ---------- */
+/* ============================================================
+   GLOBAL STATE
+   ============================================================ */
 
-const awayInput      = document.getElementById("awayTeamInput");
-const homeInput      = document.getElementById("homeTeamInput");
-const teamList       = document.getElementById("teamList");
-const spreadInput    = document.getElementById("bookSpread");
-const totalInput     = document.getElementById("bookTotal");
-const runBtn         = document.getElementById("runBtn");
-const saveBtn        = document.getElementById("saveBtn");
-const statusEl       = document.getElementById("status");
-const resultsSec     = document.getElementById("results");
-const resultBody     = document.getElementById("resultBody");
-const savedWrap      = document.getElementById("savedTableWrap");
-const downloadBtn    = document.getElementById("downloadBtn");
-const undoBtn        = document.getElementById("undoBtn");
-const clearBtn       = document.getElementById("clearBtn");
+// keyed by TR team name
+let teamStatsByTR = {};
 
-// mode toggle
-const btnManual     = document.getElementById("btnManual");
-const btnEspn       = document.getElementById("btnEspn");
-const manualSection = document.getElementById("manualSection");
-const espnSection   = document.getElementById("espnSection");
-const reloadEspnBtn = document.getElementById("reloadEspnBtn");
-const dailyCards    = document.getElementById("dailyCards");
+// name maps
+let trToDisplay = {}; // TR -> pretty display
+let displayToTR = {}; // display -> TR
+let espnNormToTR = {}; // normalized ESPN name -> TR
 
-/* ---------- State ---------- */
-
-// canonical team stats
-// { key, Team, PPG, OPPG, Poss, ORtg, DRtg, OFF_EFF, DEF_EFF, OFF_REB, DEF_REB, TOV, EFG }
-let TEAMS = [];
-let LGE_ORtg = 105;
-let LGE_DRtg = 105;
-let LG_OFF_EFG = 0.51;
-let LG_OFF_REB = 0.30;
-let LG_TOV     = 0.18;
-
-// name mapping
-// canonicalKey -> {display, trName, espnName}
-let CANON_META = new Map();
-// TR name -> canonicalKey
-let TR2CANON   = new Map();
-// ESPN name -> canonicalKey
-let ESPN2CANON = new Map();
+let TEAM_DISPLAY_NAMES = []; // for datalist
 
 let savedGames = [];
 
-/* =========================================================
-   Helpers
-   ========================================================= */
+/* ============================================================
+   UTILS
+   ============================================================ */
 
-function parseCSV(text){
-  const rows=[]; let row=[]; let cur=""; let inQ=false;
-  for(let i=0;i<text.length;i++){
-    const c=text[i];
-    if(inQ){
-      if(c==='"'){
-        if(text[i+1]==='"'){cur+='"';i++;} else inQ=false;
-      } else cur+=c;
-    }else{
-      if(c==='"') inQ=true;
-      else if(c===','){ row.push(cur); cur=""; }
-      else if(c==='\n'||c==='\r'){
-        if(cur!==""||row.length){ row.push(cur); rows.push(row); row=[]; cur=""; }
-      }else cur+=c;
-    }
-  }
-  if(cur!==""||row.length){ row.push(cur); rows.push(row); }
-  return rows.filter(r=>r.length);
+function setStatus(msg, isError = false) {
+  const el = document.getElementById("status");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle("error", isError);
 }
 
-async function fetchCSV(url){
-  if(!url) throw new Error("Missing CSV URL");
-  const r = await fetch(url,{cache:"no-store"});
-  if(!r.ok) throw new Error(`Fetch failed (${r.status}) for ${url}`);
-  return parseCSV(await r.text());
+function normalizeName(raw) {
+  if (!raw) return "";
+  return raw
+    .toString()
+    .trim()
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
-const teamKey = s => String(s||"").trim().toLowerCase();
-const fmt1    = x => Number(x).toFixed(1);
-
-function badge(text,color){
-  const cls = color==="green" ? "green" :
-              color==="red"   ? "red"   : "gray";
-  return `<span class="badge ${cls}">${text}</span>`;
+// very basic CSV parser
+function parseCsv(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  return lines.map((line) => line.split(","));
 }
 
-function populateTeamDatalist(teams){
-  if(!teamList) return;
-  teamList.innerHTML = teams.map(t=>`<option value="${t}"></option>`).join("");
+async function fetchCsv(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+  const txt = await resp.text();
+  return parseCsv(txt);
 }
 
-function resolveTeamInput(inputValue, allTeams){
-  if(!inputValue) return "";
-  const v = inputValue.trim().toLowerCase();
-
-  let hit = allTeams.find(t=>t.toLowerCase()===v);
-  if(hit) return hit;
-
-  const starts = allTeams.filter(t=>t.toLowerCase().startsWith(v));
-  if(starts.length===1) return starts[0];
-
-  const contains = allTeams.filter(t=>t.toLowerCase().includes(v));
-  if(contains.length===1) return contains[0];
-
-  return inputValue; // fallback: let safeTeamFor try fuzzy match
+function getHeaderIndexes(headerRow, wanted) {
+  const idx = {};
+  headerRow.forEach((h, i) => {
+    const key = h.toString().trim().toLowerCase();
+    if (wanted.includes(key)) idx[key] = i;
+  });
+  return idx;
 }
 
-/* =========================================================
-   Team name mapping (TR <-> ESPN -> canonical)
-   ========================================================= */
+/* ============================================================
+   TEAM MAP LOADER
+   ============================================================ */
 
-async function loadTeamMap(){
-  const rows = await fetchCSV(TEAM_MAP_URL);
-  if(!rows || rows.length < 2) return;
+async function loadTeamMap() {
+  const rows = await fetchCsv(TEAM_MAP_URL);
+  if (!rows.length) return;
 
-  const hdr = rows[0].map(x=>String(x||"").toLowerCase().trim());
-  const iTR  = hdr.indexOf("teamranking");
-  const iES  = hdr.indexOf("espn");
-  const iDis = hdr.indexOf("display"); // optional
+  const header = rows[0].map((h) => h.toString().trim().toLowerCase());
+  const trIdx = header.indexOf("teamranking");
+  const espnIdx = header.indexOf("espn");
+  const dispIdx = header.indexOf("display");
 
-  for(let r=1;r<rows.length;r++){
-    const row = rows[r];
-    if(!row) continue;
-    const trName  = iTR  >= 0 ? (row[iTR]  || "").trim() : "";
-    const espName = iES  >= 0 ? (row[iES]  || "").trim() : "";
-    const dispRaw = iDis >= 0 ? (row[iDis] || "").trim() : "";
-
-    if(!trName && !espName && !dispRaw) continue;
-
-    const display = dispRaw || trName || espName;
-    const canonKey = teamKey(display);
-
-    CANON_META.set(canonKey, {
-      display,
-      trName,
-      espnName
-    });
-
-    if(trName){
-      TR2CANON.set(teamKey(trName), canonKey);
-    }
-    if(espName){
-      ESPN2CANON.set(teamKey(espName), canonKey);
-    }
-  }
-}
-
-/* =========================================================
-   TR loader: PPG, OPPG, Poss + extra stats
-   ========================================================= */
-
-async function loadTRAll(){
-  // Load simple stat maps: key = canonicalKey, value = number
-  async function loadStatToCanonMap(url){
-    if(!url) return new Map();
-    const rows = await fetchCSV(url);
-    const m = new Map();
-
-    for(let r=1;r<rows.length;r++){
-      const row = rows[r];
-      if(!row) continue;
-      const rawTeam = (row[TEAM_COL_INDEX] || "").trim();
-      if(!rawTeam) continue;
-
-      const trKey  = teamKey(rawTeam);
-      const canonKey = TR2CANON.get(trKey) || trKey;
-
-      const val = Number(row[STAT_COL_INDEX]);
-      if(!Number.isFinite(val)) continue;
-
-      m.set(canonKey, val);
-      if(!CANON_META.has(canonKey)){
-        CANON_META.set(canonKey, { display: rawTeam, trName: rawTeam, espnName: "" });
-      }
-    }
-    return m;
+  if (trIdx === -1) {
+    throw new Error("TEAM_MAP missing 'TeamRanking' column");
   }
 
-  const ppgMap    = await loadStatToCanonMap(TR_PPG_URL);
-  const oppgMap   = await loadStatToCanonMap(TR_OPPG_URL);
-  const possMap   = await loadStatToCanonMap(TR_POSS_URL);
-  const offEffMap = await loadStatToCanonMap(TR_OFF_EFF_URL);
-  const defEffMap = await loadStatToCanonMap(TR_DEF_EFF_URL);
-  const offRebMap = await loadStatToCanonMap(TR_OFF_REB_URL);
-  const defRebMap = await loadStatToCanonMap(TR_DEF_REB_URL);
-  const tovMap    = await loadStatToCanonMap(TR_TOV_URL);
-  const efgMap    = await loadStatToCanonMap(TR_EFG_URL);
+  trToDisplay = {};
+  displayToTR = {};
+  espnNormToTR = {};
 
-  const keys = new Set([
-    ...ppgMap.keys(),
-    ...oppgMap.keys(),
-    ...possMap.keys()
+  rows.slice(1).forEach((row) => {
+    const trName = (row[trIdx] || "").trim();
+    if (!trName) return;
+    const espnName = espnIdx >= 0 ? (row[espnIdx] || "").trim() : "";
+    const display = dispIdx >= 0 ? (row[dispIdx] || "").trim() : trName;
+
+    trToDisplay[trName] = display;
+    displayToTR[display] = trName;
+
+    if (espnName) {
+      espnNormToTR[normalizeName(espnName)] = trName;
+    }
+  });
+}
+
+/* ============================================================
+   TEAMRANKINGS STATS LOADER
+   ============================================================ */
+
+// B = team (index 1), C = 2025 (index 2), H = 2024 (index 7)
+function buildIndexByTeam(rows) {
+  const map = new Map();
+  rows.slice(1).forEach((row) => {
+    const team = (row[1] || "").trim();
+    if (!team) return;
+    map.set(team, row);
+  });
+  return map;
+}
+
+function avgValFromRow(row) {
+  if (!row) return null;
+  const v2025 = parseFloat(row[2]);
+  const v2024 = parseFloat(row[7]);
+  const has25 = Number.isFinite(v2025);
+  const has24 = Number.isFinite(v2024);
+  if (has25 && has24) return (v2025 + v2024) / 2;
+  if (has25) return v2025;
+  if (has24) return v2024;
+  return null;
+}
+
+async function loadTeamRankings() {
+  const [
+    ppgRows,
+    oppgRows,
+    possRows,
+    offEffRows,
+    defEffRows,
+    offRebRows,
+    defRebRows,
+    tovRows,
+    efgRows,
+  ] = await Promise.all([
+    fetchCsv(TR_PPG_URL),
+    fetchCsv(TR_OPPG_URL),
+    fetchCsv(TR_POSS_URL),
+    fetchCsv(TR_OFF_EFF_URL),
+    fetchCsv(TR_DEF_EFF_URL),
+    fetchCsv(TR_OFF_REB_URL),
+    fetchCsv(TR_DEF_REB_URL),
+    fetchCsv(TR_TOV_URL),
+    fetchCsv(TR_EFG_URL),
   ]);
 
-  const teams = [];
-  for(const canonKey of keys){
-    const meta  = CANON_META.get(canonKey) || {display: canonKey};
-    const PPG   = ppgMap.get(canonKey);
-    const OPPG  = oppgMap.get(canonKey);
-    const Poss  = possMap.get(canonKey);
+  const idxPPG = buildIndexByTeam(ppgRows);
+  const idxOPPG = buildIndexByTeam(oppgRows);
+  const idxPOSS = buildIndexByTeam(possRows);
+  const idxOffEff = buildIndexByTeam(offEffRows);
+  const idxDefEff = buildIndexByTeam(defEffRows);
+  const idxOffReb = buildIndexByTeam(offRebRows);
+  const idxDefReb = buildIndexByTeam(defRebRows);
+  const idxTov = buildIndexByTeam(tovRows);
+  const idxEfg = buildIndexByTeam(efgRows);
 
-    if(!Number.isFinite(PPG) || !Number.isFinite(OPPG) || !Number.isFinite(Poss)) continue;
+  const stats = {};
 
-    const ORtg = (PPG  / Poss) * 100;
-    const DRtg = (OPPG / Poss) * 100;
+  // Use PPG table as base list of teams
+  ppgRows.slice(1).forEach((row) => {
+    const trName = (row[1] || "").trim();
+    if (!trName) return;
 
-    teams.push({
-      key: canonKey,
-      Team: meta.display,
-      PPG,
-      OPPG,
-      Poss,
-      ORtg,
-      DRtg,
-      OFF_EFF: offEffMap.get(canonKey),
-      DEF_EFF: defEffMap.get(canonKey),
-      OFF_REB: offRebMap.get(canonKey),
-      DEF_REB: defRebMap.get(canonKey),
-      TOV:     tovMap.get(canonKey),
-      EFG:     efgMap.get(canonKey)
-    });
+    const ppg = avgValFromRow(idxPPG.get(trName));
+    const oppg = avgValFromRow(idxOPPG.get(trName));
+    const poss = avgValFromRow(idxPOSS.get(trName));
+
+    const offEffTR = avgValFromRow(idxOffEff.get(trName));
+    const defEffTR = avgValFromRow(idxDefEff.get(trName));
+
+    const offReb = avgValFromRow(idxOffReb.get(trName));
+    const defReb = avgValFromRow(idxDefReb.get(trName));
+    const tov = avgValFromRow(idxTov.get(trName));
+    const offEfg = avgValFromRow(idxEfg.get(trName));
+
+    // derive efficiencies from PPG & possessions (per 100 poss)
+    let offEffPPG = null;
+    let defEffPPG = null;
+    if (Number.isFinite(ppg) && Number.isFinite(poss) && poss > 0) {
+      offEffPPG = (ppg / poss) * 100;
+    }
+    if (Number.isFinite(oppg) && Number.isFinite(poss) && poss > 0) {
+      defEffPPG = (oppg / poss) * 100;
+    }
+
+    // combine TR eff + PPG-based eff if both exist
+    function blend(a, b) {
+      if (Number.isFinite(a) && Number.isFinite(b)) return (a + b) / 2;
+      if (Number.isFinite(a)) return a;
+      return b;
+    }
+
+    const offEff = blend(offEffTR, offEffPPG);
+    const defEff = blend(defEffTR, defEffPPG);
+
+    stats[trName] = {
+      trName,
+      ppg,
+      oppg,
+      poss,
+      offEff,
+      defEff,
+      offReb,
+      defReb,
+      tov,
+      offEfg,
+      // pace = possessions (if your TR poss is per game), clamp
+      pace: Number.isFinite(poss) ? Math.max(60, Math.min(75, poss)) : 70,
+    };
+  });
+
+  teamStatsByTR = stats;
+}
+
+/* ============================================================
+   TEAM LIST / MANUAL NAME RESOLUTION
+   ============================================================ */
+
+function populateTeamDatalist() {
+  TEAM_DISPLAY_NAMES = Object.keys(teamStatsByTR)
+    .map((trName) => trToDisplay[trName] || trName)
+    .sort();
+
+  const dl = document.getElementById("teamList");
+  if (!dl) return;
+  dl.innerHTML = TEAM_DISPLAY_NAMES.map(
+    (name) => `<option value="${name}"></option>`
+  ).join("");
+}
+
+// Take whatever user typed and resolve to TR name
+function resolveManualInputToTR(input) {
+  if (!input) return null;
+  if (displayToTR[input]) return displayToTR[input];
+  if (teamStatsByTR[input]) return input;
+
+  const norm = normalizeName(input);
+
+  for (const [display, trName] of Object.entries(displayToTR)) {
+    if (normalizeName(display) === norm) return trName;
+  }
+  for (const trName of Object.keys(teamStatsByTR)) {
+    if (normalizeName(trName) === norm) return trName;
+  }
+  return null;
+}
+
+/* ============================================================
+   CORE MODEL
+   ============================================================ */
+
+function projectGame(awayStats, homeStats, bookSpread, bookTotal) {
+  // base efficiencies (per 100 poss)
+  const awayOffBase =
+    (awayStats.offEff ?? 100) + (100 - (homeStats.defEff ?? 100));
+  const homeOffBase =
+    (homeStats.offEff ?? 100) + (100 - (awayStats.defEff ?? 100));
+
+  function adjustOff(base, s) {
+    let adj = base;
+    if (Number.isFinite(s.offEfg)) adj += W_EFG * (s.offEfg - 50);
+    if (Number.isFinite(s.offReb)) adj += W_REB * (s.offReb - 30);
+    if (Number.isFinite(s.tov)) adj -= W_TOV * (s.tov - 15);
+    return adj;
   }
 
-  if(!teams.length) throw new Error("No TR teams parsed (PPG/OPPG/Poss).");
+  const awayOff = adjustOff(awayOffBase, awayStats);
+  const homeOff = adjustOff(homeOffBase, homeStats);
 
-  // League averages
-  const mean = arr => arr.length
-    ? arr.reduce((a,b)=>a+b,0)/arr.length
-    : NaN;
+  const paceRaw =
+    (awayStats.pace ?? 70) / 2 + (homeStats.pace ?? 70) / 2;
+  const pace = Math.max(60, Math.min(75, paceRaw));
 
-  LGE_ORtg   = mean(teams.map(t=>t.ORtg)) || 105;
-  LGE_DRtg   = mean(teams.map(t=>t.DRtg)) || 105;
-  LG_OFF_EFG = mean(teams.map(t=>Number.isFinite(t.EFG)?t.EFG:NaN).filter(Number.isFinite)) || 0.51;
-  LG_OFF_REB = mean(teams.map(t=>Number.isFinite(t.OFF_REB)?t.OFF_REB:NaN).filter(Number.isFinite)) || 0.30;
-  LG_TOV     = mean(teams.map(t=>Number.isFinite(t.TOV)?t.TOV:NaN).filter(Number.isFinite)) || 0.18;
+  const awayScore = (awayOff / 200) * pace; // divide by 200 because we summed two terms
+  const homeScore = (homeOff / 200) * pace + HOME_EDGE_POINTS;
 
-  TEAMS = teams;
-}
+  const total = awayScore + homeScore;
+  const spreadHome = homeScore - awayScore;
 
-/* =========================================================
-   Team lookup + baseParams
-   ========================================================= */
+  const winProbHome = 1 / (1 + Math.exp(-spreadHome / 6));
 
-function safeTeamFor(name){
-  if(!name) throw new Error("Empty team name");
-  const v = name.trim().toLowerCase();
-
-  // direct canonical key
-  let row = TEAMS.find(t=>t.key === v);
-  if(row) return row;
-
-  // exact display
-  row = TEAMS.find(t=>t.Team.toLowerCase() === v);
-  if(row) return row;
-
-  // startsWith
-  row = TEAMS.find(t=>t.Team.toLowerCase().startsWith(v));
-  if(row) return row;
-
-  // contains
-  row = TEAMS.find(t=>t.Team.toLowerCase().includes(v));
-  if(row) return row;
-
-  throw new Error(`No stats found for team "${name}"`);
-}
-
-function baseParams(awayName, homeName){
-  const A = safeTeamFor(awayName); // away
-  const H = safeTeamFor(homeName); // home
-
-  // possessions = average of both teams
-  let poss = 0.5 * (A.Poss + H.Poss);
-  if(!Number.isFinite(poss) || poss <= 0) poss = 70;
-
-  // Offense multipliers using TR shooting / rebounding / turnovers
-  function offenseMultiplier(t){
-    const efg = Number.isFinite(t.EFG)     ? t.EFG     : LG_OFF_EFG;
-    const reb = Number.isFinite(t.OFF_REB) ? t.OFF_REB : LG_OFF_REB;
-    const tov = Number.isFinite(t.TOV)     ? t.TOV     : LG_TOV;
-
-    const partEFG = Math.pow(efg / Math.max(LG_OFF_EFG,1e-6), W_EFG);
-    const partREB = Math.pow(reb / Math.max(LG_OFF_REB,1e-6), W_REB);
-    const partTOV = Math.pow((1 - tov) / Math.max(1e-6, 1 - LG_TOV), W_TOV);
-
-    let mult = partEFG * partREB * partTOV;
-    mult = Math.max(0.85, Math.min(1.15, mult)); // keep sane
-    return mult;
+  // plays vs book
+  let spreadPlay = "NO BET";
+  if (Number.isFinite(bookSpread)) {
+    const diff = spreadHome - bookSpread;
+    if (Math.abs(diff) >= SPREAD_EDGE_TH) {
+      spreadPlay =
+        diff > 0
+          ? `Home ${bookSpread.toFixed(1)} (model -${spreadHome.toFixed(1)})`
+          : `Away +${Math.abs(bookSpread).toFixed(1)}`;
+    }
   }
 
-  const offMultA = offenseMultiplier(A);
-  const offMultH = offenseMultiplier(H);
+  let totalPlay = "NO BET";
+  if (Number.isFinite(bookTotal)) {
+    const diffT = total - bookTotal;
+    if (Math.abs(diffT) >= TOTAL_EDGE_TH) {
+      totalPlay = diffT > 0 ? "Over" : "Under";
+    }
+  }
 
-  const ORtg_A = A.ORtg * offMultA;
-  const ORtg_H = H.ORtg * offMultH;
-  const DRtg_A = A.DRtg;
-  const DRtg_H = H.DRtg;
+  const edgeSpread = Number.isFinite(bookSpread)
+    ? Math.abs(spreadHome - bookSpread)
+    : 0;
+  const edgeTotal = Number.isFinite(bookTotal)
+    ? Math.abs(total - bookTotal)
+    : 0;
+  const edge = Math.max(edgeSpread, edgeTotal);
+  const confidence = Math.max(0, Math.min(10, edge * 1.5));
 
-  // matchup-adjusted PPP
-  let pppA = BASE_PPP *
-             (ORtg_A / LGE_ORtg) *
-             (LGE_DRtg / DRtg_H);
-
-  let pppH = BASE_PPP *
-             (ORtg_H / LGE_ORtg) *
-             (LGE_DRtg / DRtg_A);
-
-  // clamp
-  pppA = Math.min(MAX_PPP, Math.max(MIN_PPP, pppA));
-  pppH = Math.min(MAX_PPP, Math.max(MIN_PPP, pppH));
-
-  return { poss, pppA, pppH };
+  return {
+    awayScore,
+    homeScore,
+    total,
+    spreadHome,
+    winProbHome,
+    spreadPlay,
+    totalPlay,
+    confidence,
+  };
 }
 
-/* =========================================================
-   Saved games: manual mode
-   ========================================================= */
+/* ============================================================
+   MANUAL MODEL UI
+   ============================================================ */
 
-function loadSaved(){
-  try{
-    savedGames = JSON.parse(localStorage.getItem("cbb_saved_tr_only") || "[]");
-  }catch{ savedGames = []; }
-  renderSaved();
+function renderManualResult(
+  trAway,
+  trHome,
+  proj,
+  bookSpread,
+  bookTotal
+) {
+  const resEl = document.getElementById("results");
+  const body = document.getElementById("resultBody");
+  resEl.classList.remove("hidden");
+
+  const awayDisp = trToDisplay[trAway] || trAway;
+  const homeDisp = trToDisplay[trHome] || trHome;
+
+  const homeWinProb = (proj.winProbHome * 100).toFixed(1);
+  const awayWinProb = (100 - homeWinProb).toFixed(1);
+
+  body.innerHTML = `
+    <p><strong>Model Score:</strong> ${awayDisp} ${proj.awayScore.toFixed(
+    1
+  )} – ${homeDisp} ${proj.homeScore.toFixed(1)}</p>
+    <p><strong>Book Line / Total:</strong>
+      ${Number.isFinite(bookSpread) ? bookSpread : "N/A"} /
+      ${Number.isFinite(bookTotal) ? bookTotal : "N/A"}
+    </p>
+    <p><strong>Model Line / Total:</strong>
+      ${proj.spreadHome.toFixed(1)} /
+      ${proj.total.toFixed(1)}
+    </p>
+    <p><strong>Spread Play:</strong> ${proj.spreadPlay}</p>
+    <p><strong>Total Play:</strong> ${proj.totalPlay}</p>
+    <p><strong>Win Probability:</strong>
+      ${homeDisp}: ${homeWinProb}%,
+      ${awayDisp}: ${awayWinProb}%
+    </p>
+    <p><strong>Confidence:</strong> ${proj.confidence.toFixed(1)} / 10</p>
+  `;
 }
 
-function persistSaved(){
-  localStorage.setItem("cbb_saved_tr_only", JSON.stringify(savedGames));
-  renderSaved();
-}
+function handleRunManual() {
+  const awayInput = document.getElementById("awayTeamInput").value.trim();
+  const homeInput = document.getElementById("homeTeamInput").value.trim();
+  const bookSpread = parseFloat(
+    document.getElementById("bookSpread").value
+  );
+  const bookTotal = parseFloat(document.getElementById("bookTotal").value);
 
-function renderSaved(){
-  if(!savedGames.length){
-    if(savedWrap) savedWrap.innerHTML = `<p class="muted">No games saved yet.</p>`;
+  const trAway = resolveManualInputToTR(awayInput);
+  const trHome = resolveManualInputToTR(homeInput);
+
+  if (!trAway || !trHome) {
+    setStatus(
+      "One or both team names not recognized. Use the dropdown suggestions.",
+      true
+    );
     return;
   }
-  const cols = [
-    "Away","Home",
-    "Book Spread (Home)","Book Total",
-    "Model Away Pts","Model Home Pts","Model Total",
-    "Model Spread (Home)",
-    "Total Edge","Spread Edge",
-    "Totals Play","Spread Play",
-    "Confidence (1-10)"
+
+  const awayStats = teamStatsByTR[trAway];
+  const homeStats = teamStatsByTR[trHome];
+
+  if (!awayStats || !homeStats) {
+    setStatus("Stats missing for one of the teams.", true);
+    return;
+  }
+
+  const proj = projectGame(awayStats, homeStats, bookSpread, bookTotal);
+  renderManualResult(trAway, trHome, proj, bookSpread, bookTotal);
+
+  document.getElementById("saveBtn").disabled = false;
+
+  window.latestResult = {
+    trAway,
+    trHome,
+    awayDisp: trToDisplay[trAway] || trAway,
+    homeDisp: trToDisplay[trHome] || trHome,
+    bookSpread: Number.isFinite(bookSpread) ? bookSpread : "",
+    bookTotal: Number.isFinite(bookTotal) ? bookTotal : "",
+    ...proj,
+  };
+
+  setStatus("Manual projection ready.");
+}
+
+/* ---------- Saved games ---------- */
+
+function loadSavedFromStorage() {
+  try {
+    const raw = localStorage.getItem("cbb_saved") || "[]";
+    savedGames = JSON.parse(raw);
+  } catch {
+    savedGames = [];
+  }
+}
+
+function persistSaved() {
+  localStorage.setItem("cbb_saved", JSON.stringify(savedGames));
+}
+
+function renderSavedTable() {
+  const wrap = document.getElementById("savedTableWrap");
+  if (!savedGames.length) {
+    wrap.innerHTML = '<p class="muted">No games saved yet.</p>';
+    return;
+  }
+
+  let html =
+    "<table><thead><tr>" +
+    "<th>Away</th><th>Home</th><th>Model Score</th>" +
+    "<th>Book Spread</th><th>Model Spread</th>" +
+    "<th>Book Total</th><th>Model Total</th>" +
+    "<th>Spread Play</th><th>Total Play</th><th>Conf</th>" +
+    "</tr></thead><tbody>";
+
+  savedGames.forEach((g) => {
+    html += `<tr>
+      <td>${g.awayDisp}</td>
+      <td>${g.homeDisp}</td>
+      <td>${g.awayScore.toFixed(1)} - ${g.homeScore.toFixed(1)}</td>
+      <td>${g.bookSpread}</td>
+      <td>${g.spreadHome.toFixed(1)}</td>
+      <td>${g.bookTotal}</td>
+      <td>${g.total.toFixed(1)}</td>
+      <td>${g.spreadPlay}</td>
+      <td>${g.totalPlay}</td>
+      <td>${g.confidence.toFixed(1)}</td>
+    </tr>`;
+  });
+
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+}
+
+function handleSaveGame() {
+  const r = window.latestResult;
+  if (!r) return;
+  savedGames.push(r);
+  persistSaved();
+  renderSavedTable();
+}
+
+function handleUndoLast() {
+  if (!savedGames.length) return;
+  savedGames.pop();
+  persistSaved();
+  renderSavedTable();
+}
+
+function handleClearAll() {
+  if (!savedGames.length) return;
+  savedGames = [];
+  persistSaved();
+  renderSavedTable();
+}
+
+function handleDownloadCsv() {
+  if (!savedGames.length) return;
+
+  const header = [
+    "Away",
+    "Home",
+    "AwayScore",
+    "HomeScore",
+    "BookSpread",
+    "ModelSpread",
+    "BookTotal",
+    "ModelTotal",
+    "SpreadPlay",
+    "TotalPlay",
+    "Confidence",
   ];
 
-  const head = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>`;
-  const body = savedGames.map(r =>
-    `<tr>${cols.map(c=>`<td>${r[c] ?? ""}</td>`).join("")}</tr>`
-  ).join("");
+  const rows = savedGames.map((g) => [
+    g.awayDisp,
+    g.homeDisp,
+    g.awayScore.toFixed(1),
+    g.homeScore.toFixed(1),
+    g.bookSpread,
+    g.spreadHome.toFixed(1),
+    g.bookTotal,
+    g.total.toFixed(1),
+    g.spreadPlay,
+    g.totalPlay,
+    g.confidence.toFixed(1),
+  ]);
 
-  if(savedWrap){
-    savedWrap.innerHTML = `<div class="tableWrap"><table>${head}<tbody>${body}</tbody></table></div>`;
-  }
+  const csv =
+    [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "cbb_saved_games.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
-function toCSV(arr){
-  if(!arr.length) return "";
-  const cols = Object.keys(arr[0]);
-  const esc  = v => `"${String(v??"").replaceAll('"','""')}"`;
-  const header = cols.map(esc).join(",") + "\n";
-  const rows   = arr.map(r => cols.map(c=>esc(r[c])).join(",")).join("\n");
-  return header + rows;
-}
+/* ============================================================
+   ESPN / CBB_GAMES VIEW
+   ============================================================ */
 
-/* =========================================================
-   ESPN daily games (from Sheet CSV)
-   ========================================================= */
+async function loadCbbGamesFromSheet() {
+  const rows = await fetchCsv(CBB_GAMES_URL);
+  if (!rows.length) return [];
 
-async function loadCbbGamesFromCsv(){
-  const rows = await fetchCSV(CBB_GAMES_URL);
-  if(!rows || rows.length < 2) return [];
-
-  const hdr = rows[0].map(x=>String(x||"").toLowerCase().trim());
-  const iDate   = hdr.indexOf("date");
-  const iTime   = hdr.indexOf("time");
-  const iAway   = hdr.indexOf("away");
-  const iHome   = hdr.indexOf("home");
-  const iSpread = hdr.indexOf("bookspreadhome");
-  const iTotal  = hdr.indexOf("booktotal");
-  const iBook   = hdr.indexOf("bookname");
+  const header = rows[0].map((h) => h.toString().trim().toLowerCase());
+  const idxDate = header.indexOf("date");
+  const idxTime = header.indexOf("time");
+  const idxAway = header.indexOf("away");
+  const idxHome = header.indexOf("home");
+  const idxSpread = header.indexOf("bookspreadhome");
+  const idxTotal = header.indexOf("booktotal");
+  const idxBook = header.indexOf("bookname");
 
   const games = [];
-  for(let r=1;r<rows.length;r++){
-    const row = rows[r];
-    if(!row) continue;
 
-    const dateStr = iDate >=0 ? (row[iDate] || "") : "";
-    const timeStr = iTime >=0 ? (row[iTime] || "") : "";
-    const awayRaw = iAway >=0 ? (row[iAway] || "") : "";
-    const homeRaw = iHome >=0 ? (row[iHome] || "") : "";
-    const spreadStr = iSpread >=0 ? (row[iSpread] || "") : "";
-    const totalStr  = iTotal  >=0 ? (row[iTotal]  || "") : "";
-    const bookName  = iBook   >=0 ? (row[iBook]   || "") : "";
-
-    if(!awayRaw || !homeRaw) continue;
-
-    const awayKey = teamKey(awayRaw);
-    const homeKey = teamKey(homeRaw);
-
-    const awayCanonKey = ESPN2CANON.get(awayKey) || awayKey;
-    const homeCanonKey = ESPN2CANON.get(homeKey) || homeKey;
-
-    const awayDisplay = CANON_META.get(awayCanonKey)?.display || awayRaw;
-    const homeDisplay = CANON_META.get(homeCanonKey)?.display || homeRaw;
-
+  rows.slice(1).forEach((row) => {
+    const awayEspn = row[idxAway] || "";
+    const homeEspn = row[idxHome] || "";
+    if (!awayEspn || !homeEspn) return;
     games.push({
-      dateStr,
-      timeStr,
-      awayName: awayDisplay,
-      homeName: homeDisplay,
-      bookSpread: spreadStr !== "" ? Number(spreadStr) : null,
-      bookTotal:  totalStr  !== "" ? Number(totalStr)  : null,
-      bookName
+      date: row[idxDate] || "",
+      time: row[idxTime] || "",
+      awayEspn,
+      homeEspn,
+      bookSpread: parseFloat(row[idxSpread]),
+      bookTotal: parseFloat(row[idxTotal]),
+      bookName: row[idxBook] || "",
     });
-  }
+  });
 
   return games;
 }
 
-function renderDailyCardsFromCsv(games){
-  if(!dailyCards) return;
-  if(!games.length){
-    dailyCards.innerHTML = `<p class="muted">No games found for today in the sheet.</p>`;
+function mapEspnToTR(name) {
+  const key = normalizeName(name);
+  return espnNormToTR[key] || null;
+}
+
+function renderDailyCards(games) {
+  const wrap = document.getElementById("dailyCards");
+  wrap.innerHTML = "";
+
+  if (!games.length) {
+    wrap.innerHTML = '<p class="muted">No games found for today.</p>';
     return;
   }
 
-  const cardsHtml = games.map(g => {
-    let projectionHtml = "";
-    try{
-      const { poss, pppA, pppH } = baseParams(g.awayName, g.homeName);
-      const detA = pppA * poss;
-      const detH = pppH * poss;
-      const modelTotal      = detA + detH;
-      const modelSpreadHome = detH - detA;
-      const winner = detH >= detA ? g.homeName : g.awayName;
+  games.forEach((g) => {
+    const card = document.createElement("div");
+    card.className = "game-card";
 
-      let totalEdge = null;
-      let spreadEdge = null;
-      let totalPlay  = "NO BET";
-      let spreadPlay = "NO BET";
-
-      if(g.bookTotal != null){
-        totalEdge = modelTotal - g.bookTotal;
-        if(totalEdge >= 2.0)       totalPlay = `OVER ${g.bookTotal.toFixed(1)}`;
-        else if(totalEdge <= -2.0) totalPlay = `UNDER ${g.bookTotal.toFixed(1)}`;
-      }
-
-      if(g.bookSpread != null){
-        const bookHomeEdge = -g.bookSpread;
-        spreadEdge = modelSpreadHome - bookHomeEdge;
-        if(spreadEdge >= 1.5)       spreadPlay = `${g.homeName} ${g.bookSpread.toFixed(1)}`;
-        else if(spreadEdge <= -1.5) spreadPlay = `${g.awayName} ${(-g.bookSpread).toFixed(1)}`;
-      }
-
-      projectionHtml = `
-        <p><strong>Model Score:</strong> ${g.homeName} ${Math.round(detH)} – ${g.awayName} ${Math.round(detA)}</p>
-        <p><strong>Projected Winner:</strong> ${winner}</p>
-        <p><strong>Model Total:</strong> ${fmt1(modelTotal)}${g.bookTotal != null ? ` &nbsp; <strong>Book:</strong> ${g.bookTotal.toFixed(1)}` : ""}</p>
-        <p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}${g.bookSpread != null ? ` &nbsp; <strong>Book (Home):</strong> ${(g.bookSpread>=0?"+":"")+g.bookSpread.toFixed(1)}` : ""}</p>
-        ${g.bookTotal != null ? `<p><strong>Totals Play:</strong> ${totalPlay}</p>` : ""}
-        ${g.bookSpread != null ? `<p><strong>Spread Play:</strong> ${spreadPlay}</p>` : ""}
+    if (g.error) {
+      card.innerHTML = `
+        <div class="game-time">${g.time || ""}</div>
+        <div class="game-matchup">${g.awayEspn} @ ${g.homeEspn}</div>
+        <p class="error">${g.error}</p>
       `;
-    }catch(e){
-      projectionHtml = `<p class="error">Model error: ${e.message}</p>`;
+      wrap.appendChild(card);
+      return;
     }
 
-    const lineInfo = (g.bookSpread != null || g.bookTotal != null)
-      ? `<p><strong>Book Line:</strong> ${g.bookSpread != null ? `Spread: ${(g.bookSpread>=0?"+":"")+g.bookSpread.toFixed(1)} ` : ""}${g.bookTotal != null ? `/ Total: ${g.bookTotal.toFixed(1)}` : ""} ${g.bookName ? `(${g.bookName})` : ""}</p>`
-      : `<p class="muted">No odds in sheet for this game.</p>`;
+    const confScore = g.confidence || 0;
+    const confPct = Math.max(0, Math.min(10, confScore)) * 10;
 
-    return `
-      <div class="game-card">
-        <div class="card-header">
-          <div class="tip-time">${g.timeStr || ""}</div>
-          <div class="matchup">${g.awayName} @ ${g.homeName}</div>
-        </div>
-        <div class="card-body">
-          ${lineInfo}
-          ${projectionHtml}
+    const spreadClass =
+      g.spreadPlay && !g.spreadPlay.toUpperCase().includes("NO BET")
+        ? "play-green"
+        : "";
+    const totalClass =
+      g.totalPlay && !g.totalPlay.toUpperCase().includes("NO BET")
+        ? "play-green"
+        : "";
+
+    card.innerHTML = `
+      <div class="game-time">${g.time || ""}</div>
+      <div class="game-matchup">${g.awayDisp} @ ${g.homeDisp}</div>
+
+      <div class="game-model-score">
+        Model Score: ${g.awayDisp} ${g.awayScore.toFixed(
+      1
+    )} – ${g.homeDisp} ${g.homeScore.toFixed(1)}
+      </div>
+
+      <div class="game-line">
+        Book Line / Total:
+        ${Number.isFinite(g.bookSpread) ? g.bookSpread : "N/A"} /
+        ${Number.isFinite(g.bookTotal) ? g.bookTotal : "N/A"}
+      </div>
+
+      <div class="game-line">
+        Model Line / Total:
+        ${g.spreadHome.toFixed(1)} /
+        ${g.total.toFixed(1)}
+      </div>
+
+      <div class="game-play-row">
+        Spread Play:
+        <span class="${spreadClass}">${g.spreadPlay}</span>
+      </div>
+      <div class="game-play-row">
+        Total Play:
+        <span class="${totalClass}">${g.totalPlay}</span>
+      </div>
+
+      <div class="confidence-row">
+        <span>Confidence: ${confScore.toFixed(1)} / 10</span>
+        <div class="confidence-bar">
+          <div class="conf-fill" style="width:${confPct}%;"></div>
         </div>
       </div>
     `;
-  }).join("");
 
-  dailyCards.innerHTML = cardsHtml;
+    wrap.appendChild(card);
+  });
+
+  setStatus(`Loaded ${games.length} games.`);
 }
 
-/* =========================================================
-   Mode toggle + init + manual run
-   ========================================================= */
+async function handleReloadEspn() {
+  try {
+    setStatus("Loading CBB_Games sheet…");
+    const rawGames = await loadCbbGamesFromSheet();
 
-function showManual(){
-  btnManual?.classList.add("active");
-  btnEspn?.classList.remove("active");
-  manualSection?.classList.remove("hidden");
-  espnSection?.classList.add("hidden");
+    const modeled = rawGames.map((g) => {
+      const trAway = mapEspnToTR(g.awayEspn);
+      const trHome = mapEspnToTR(g.homeEspn);
+
+      if (!trAway || !trHome) {
+        return {
+          ...g,
+          error: `Model error: no stats found for "${!trAway
+            ? g.awayEspn
+            : g.homeEspn}"`,
+        };
+      }
+
+      const awayStats = teamStatsByTR[trAway];
+      const homeStats = teamStatsByTR[trHome];
+
+      if (!awayStats || !homeStats) {
+        return {
+          ...g,
+          error: `Model error: missing stats for "${!awayStats
+            ? trAway
+            : trHome}"`,
+        };
+      }
+
+      const proj = projectGame(
+        awayStats,
+        homeStats,
+        g.bookSpread,
+        g.bookTotal
+      );
+
+      return {
+        ...g,
+        trAway,
+        trHome,
+        awayDisp: trToDisplay[trAway] || trAway,
+        homeDisp: trToDisplay[trHome] || trHome,
+        ...proj,
+      };
+    });
+
+    renderDailyCards(modeled);
+  } catch (err) {
+    console.error(err);
+    setStatus(`Data load error: ${err.message}`, true);
+    alert(`Data load error:\n${err.message}`);
+  }
 }
 
-function showEspn(){
-  btnManual?.classList.remove("active");
-  btnEspn?.classList.add("active");
-  manualSection?.classList.add("hidden");
-  espnSection?.classList.remove("hidden");
-}
+/* ============================================================
+   INIT + EVENT HOOKUP
+   ============================================================ */
 
-async function init(){
-  try{
-    if(statusEl) statusEl.textContent = "Loading team mappings...";
+async function init() {
+  try {
+    setStatus("Loading team map…");
     await loadTeamMap();
 
-    if(statusEl) statusEl.textContent = "Loading TeamRankings stats...";
-    await loadTRAll();
+    setStatus("Loading TeamRankings stats…");
+    await loadTeamRankings();
 
-    const allTeams = TEAMS.map(t=>t.Team).sort((a,b)=>a.localeCompare(b));
-    populateTeamDatalist(allTeams);
+    populateTeamDatalist();
 
-    if(awayInput) awayInput.value = allTeams[0] || "";
-    if(homeInput) homeInput.value = allTeams[1] || "";
+    loadSavedFromStorage();
+    renderSavedTable();
 
-    runBtn && (runBtn.disabled = false);
-    saveBtn && (saveBtn.disabled = true);
-    if(statusEl) statusEl.textContent = "Ready.";
-  }catch(e){
-    console.error(e);
-    if(statusEl) statusEl.textContent = "Data load error.";
-    alert("Data load error:\n" + e.message);
+    document.getElementById("runBtn").disabled = false;
+
+    setStatus("Ready.");
+  } catch (err) {
+    console.error(err);
+    setStatus(`Init error: ${err.message}`, true);
+    alert(`Init error:\n${err.message}`);
   }
-
-  loadSaved();
 }
 
-if(btnManual && btnEspn){
-  btnManual.addEventListener("click", showManual);
-  btnEspn.addEventListener("click", showEspn);
-}
+document.addEventListener("DOMContentLoaded", () => {
+  const manualSection = document.getElementById("manualSection");
+  const espnSection = document.getElementById("espnSection");
+  const btnManual = document.getElementById("btnManual");
+  const btnEspn = document.getElementById("btnEspn");
 
-if(reloadEspnBtn){
-  reloadEspnBtn.addEventListener("click", async () => {
-    try{
-      if(statusEl) statusEl.textContent = "Loading today's games from sheet...";
-      const games = await loadCbbGamesFromCsv();
-      renderDailyCardsFromCsv(games);
-      if(statusEl) statusEl.textContent = `Loaded ${games.length} games.`;
-    }catch(e){
-      console.error(e);
-      if(statusEl) statusEl.textContent = "Error loading daily games.";
-      alert("Error loading daily games:\n" + e.message);
-    }
+  btnManual.addEventListener("click", () => {
+    btnManual.classList.add("active");
+    btnEspn.classList.remove("active");
+    manualSection.classList.remove("hidden");
+    espnSection.classList.add("hidden");
   });
-}
 
-if(runBtn){
-  runBtn.addEventListener("click", () => {
-    try{
-      const allTeams = TEAMS.map(t=>t.Team);
-      const awayName = resolveTeamInput(awayInput.value, allTeams);
-      const homeName = resolveTeamInput(homeInput.value, allTeams);
-
-      if(!awayName || !homeName){
-        alert("Please choose valid teams.");
-        return;
-      }
-      if(awayName.trim().toLowerCase() === homeName.trim().toLowerCase()){
-        alert("Please pick two different teams.");
-        return;
-      }
-
-      const hasBookSpread = (spreadInput.value ?? "").trim() !== "";
-      const hasBookTotal  = (totalInput.value ?? "").trim() !== "";
-      const bookSpread = hasBookSpread ? Number(spreadInput.value) : null;
-      const bookTotal  = hasBookTotal  ? Number(totalInput.value)  : null;
-
-      const { poss, pppA, pppH } = baseParams(awayName, homeName);
-      const detA = pppA * poss;
-      const detH = pppH * poss;
-
-      const modelTotal      = detA + detH;
-      const modelSpreadHome = detH - detA;
-
-      const winner = detH >= detA ? homeName : awayName;
-      const line   = detH >= detA
-        ? `${homeName} ${Math.round(detH)} – ${awayName} ${Math.round(detA)}`
-        : `${awayName} ${Math.round(detA)} – ${homeName} ${Math.round(detH)}`;
-
-      let edgesHTML = "";
-      let savePayload = {};
-
-      if(hasBookSpread || hasBookTotal){
-        let totalEdge = null;
-        let spreadEdge = null;
-        let totalPlay = "NO BET";
-        let spreadPlay = "NO BET";
-
-        if(hasBookTotal && Number.isFinite(bookTotal)){
-          totalEdge = modelTotal - bookTotal;
-          if(totalEdge >= 2.0)       totalPlay = `OVER ${bookTotal.toFixed(1)}`;
-          else if(totalEdge <= -2.0) totalPlay = `UNDER ${bookTotal.toFixed(1)}`;
-        }
-
-        if(hasBookSpread && Number.isFinite(bookSpread)){
-          const bookHomeEdge = -bookSpread;
-          spreadEdge = modelSpreadHome - bookHomeEdge;
-          if(spreadEdge >= 1.5)       spreadPlay = `${homeName} ${bookSpread.toFixed(1)}`;
-          else if(spreadEdge <= -1.5) spreadPlay = `${awayName} ${(-bookSpread).toFixed(1)}`;
-        }
-
-        const mag = Math.max(Math.abs(spreadEdge ?? 0), Math.abs(totalEdge ?? 0));
-        const conf = Math.round(1 + 9 * Math.min(Math.abs(mag)/8.0, 1));
-
-        edgesHTML = `
-          ${hasBookTotal  ? `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)} &nbsp; <strong>Book:</strong> ${bookTotal.toFixed(1)}</p>` : `<p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>`}
-          ${hasBookSpread ? `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)} &nbsp; <strong>Book (Home):</strong> ${(bookSpread>=0?"+":"")+bookSpread.toFixed(1)}</p>` : `<p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>`}
-          ${hasBookTotal  ? `<p><strong>Totals Play:</strong> ${totalPlay}</p>` : ``}
-          ${hasBookSpread ? `<p><strong>Spread Play:</strong> ${spreadPlay}</p>` : ``}
-          <div><strong>Prediction Confidence:</strong> ${badge((hasBookTotal||hasBookSpread)?`${conf} / 10`:"Model-only","gray")}</div>
-        `;
-
-        savePayload = {
-          "Book Spread (Home)": hasBookSpread ? (bookSpread>=0?"+":"")+bookSpread.toFixed(1) : "",
-          "Book Total":         hasBookTotal ? bookTotal.toFixed(1) : "",
-          "Total Edge":         hasBookTotal ? fmt1(totalEdge) : "",
-          "Spread Edge":        hasBookSpread ? fmt1(spreadEdge) : "",
-          "Totals Play":        hasBookTotal ? totalPlay : "",
-          "Spread Play":        hasBookSpread ? spreadPlay : "",
-          "Confidence (1-10)":  (hasBookTotal||hasBookSpread)? conf : ""
-        };
-      }else{
-        edgesHTML = `
-          <p><strong>Total Points (Model):</strong> ${fmt1(modelTotal)}</p>
-          <p><strong>Model Spread (Home):</strong> ${(modelSpreadHome>=0?"+":"")+fmt1(modelSpreadHome)}</p>
-          <div><strong>Prediction Confidence:</strong> ${badge("Model-only","gray")}</div>
-        `;
-      }
-
-      resultsSec?.classList.remove("hidden");
-      if(resultBody){
-        resultBody.innerHTML = `
-          <p><strong>Prediction (model):</strong> ${line}</p>
-          <p><strong>Projected Winner:</strong> ${winner}</p>
-          ${edgesHTML}
-        `;
-      }
-
-      if(saveBtn){
-        saveBtn.disabled = false;
-        saveBtn.onclick = () => {
-          savedGames.push({
-            Away: awayName,
-            Home: homeName,
-            "Book Spread (Home)": savePayload["Book Spread (Home)"] ?? "",
-            "Book Total":          savePayload["Book Total"] ?? "",
-            "Model Away Pts": fmt1(detA),
-            "Model Home Pts": fmt1(detH),
-            "Model Total":    fmt1(modelTotal),
-            "Model Spread (Home)": fmt1(modelSpreadHome),
-            "Total Edge":     savePayload["Total Edge"] ?? "",
-            "Spread Edge":    savePayload["Spread Edge"] ?? "",
-            "Totals Play":    savePayload["Totals Play"] ?? "",
-            "Spread Play":    savePayload["Spread Play"] ?? "",
-            "Confidence (1-10)": savePayload["Confidence (1-10)"] ?? ""
-          });
-          persistSaved();
-        };
-      }
-
-    }catch(e){
-      console.error(e);
-      alert("Run error:\n" + e.message);
-    }
+  btnEspn.addEventListener("click", () => {
+    btnEspn.classList.add("active");
+    btnManual.classList.remove("active");
+    espnSection.classList.remove("hidden");
+    manualSection.classList.add("hidden");
   });
-}
 
-if(downloadBtn){
-  downloadBtn.addEventListener("click", () => {
-    if(!savedGames.length) return;
-    const csv = toCSV(savedGames);
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url;
-    a.download = `cbb_saved_${new Date().toISOString().slice(0,16).replace("T","_")}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  });
-}
+  document.getElementById("runBtn").addEventListener("click", handleRunManual);
+  document.getElementById("saveBtn").addEventListener("click", handleSaveGame);
+  document.getElementById("undoBtn").addEventListener("click", handleUndoLast);
+  document.getElementById("clearBtn").addEventListener("click", handleClearAll);
+  document
+    .getElementById("downloadBtn")
+    .addEventListener("click", handleDownloadCsv);
 
-if(undoBtn){
-  undoBtn.addEventListener("click", () => {
-    if(!savedGames.length) return;
-    savedGames.pop();
-    persistSaved();
-  });
-}
+  document
+    .getElementById("reloadEspnBtn")
+    .addEventListener("click", handleReloadEspn);
 
-if(clearBtn){
-  clearBtn.addEventListener("click", () => {
-    if(!savedGames.length) return;
-    if(confirm("Clear all saved games?")){
-      savedGames = [];
-      persistSaved();
-    }
-  });
-}
-
-// kick it off
-init();
-showManual();
+  init();
+});
