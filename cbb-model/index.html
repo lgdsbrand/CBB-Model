@@ -12,7 +12,7 @@
       <h1>CBB TeamRankings Model</h1>
       <p class="subtitle">Division I projections using TeamRankings stats</p>
     </div>
-    <div id="status" class="status">Loading…</div>
+    <div id="status" class="status">Loading data…</div>
   </header>
 
   <!-- Mode toggle -->
@@ -24,28 +24,32 @@
   <!-- Manual section -->
   <section id="manualSection" class="card-block">
     <h2>Manual Matchup</h2>
+
     <div class="form-grid">
       <div class="form-field">
         <label for="awayTeamInput">Away Team</label>
         <input
-          list="teamList"
           id="awayTeamInput"
           type="text"
-          placeholder="Type or pick a team"
+          list="teamList"
+          autocomplete="off"
+          placeholder="Start typing a team…"
         />
       </div>
 
       <div class="form-field">
         <label for="homeTeamInput">Home Team</label>
         <input
-          list="teamList"
           id="homeTeamInput"
           type="text"
-          placeholder="Type or pick a team"
+          list="teamList"
+          autocomplete="off"
+          placeholder="Start typing a team…"
         />
       </div>
     </div>
 
+    <!-- shared datalist for both inputs -->
     <datalist id="teamList"></datalist>
 
     <div class="form-grid">
