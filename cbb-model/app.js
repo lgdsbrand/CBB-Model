@@ -15,7 +15,7 @@ const TR_EFG_URL     = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6
 /*
   Team mapping CSV (TR names + ESPN names):
   Expected header (case-insensitive):
-    TeamRanking, ESPN, Display
+    TeamRanking, ESPN, Display   (Display optional)
 */
 const TEAM_MAP_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6ZbqLvKsS1E32DtBijLaSdrdtermV-Xyno1jSwGHx0m59JAEbq-zVpDztR7CjX-0Ru4jUjMR/pub?gid=1061863749&single=true&output=csv";
 
@@ -30,31 +30,31 @@ const CBB_GAMES_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYVL4J6Z
 // MODEL PARAMETERS
 // ===============================
 
-// 50/50 blend now – you can change mid-season (e.g. EFF_WEIGHT = 0.7)
+// 50/50 blend PPG vs efficiency (you can adjust mid-season)
 const EFF_WEIGHT = 0.5;
 const PPG_WEIGHT = 0.5;
 
-// Home court advantage
+// Home court bump
 const HOME_EDGE_POINTS = 3.0;
 
-// For confidence score
-const MAX_EDGE_FOR_CONF = 12; // 10/10 at ~12 pts of edge
+// Confidence scaling
+const MAX_EDGE_FOR_CONF = 12;
 
 // ===============================
 // GLOBAL STATE
 // ===============================
-let teamsByTR = {};       // key: TeamRanking name
-let teamsByDisplay = {};  // key: display name
-let espmToTR = {};        // ESPN name -> TR name
+let teamsByTR = {};       // TR-name -> team object
+let teamsByDisplay = {};  // display name -> team object
+let espnToTR = {};        // ESPN name -> TR name
 let leaguePPP = 1.05;
-let games = [];           // daily games list
+let games = [];
 
 // ===============================
 // UTILITIES
 // ===============================
 async function fetchCsv(url) {
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Fetch failed: ${resp.status} - ${url}`);
+  if (!resp.ok) throw new Error(`Fetch failed: ${resp.status} (${url})`);
   return await resp.text();
 }
 
@@ -65,47 +65,51 @@ function parseCsv(text) {
 
 function toNum(v) {
   if (v === undefined || v === null) return NaN;
-  const cleaned = String(v).replace(/[+%]/g, "").trim();
-  const x = parseFloat(cleaned);
+  const x = parseFloat(String(v).replace(/[+%]/g, "").trim());
   return Number.isFinite(x) ? x : NaN;
+}
+
+function setStatus(msg) {
+  const el = document.getElementById("status-text");
+  if (el) el.textContent = msg;
 }
 
 // ===============================
 // LOAD TEAMRANKINGS DATA
 // ===============================
-async function loadTRSheet(url, valueColIndex = 2) {
+async function loadTRSheet(url, valueColIndex) {
   const csv = await fetchCsv(url);
   const rows = parseCsv(csv);
-  const data = rows.slice(1);
+  const data = rows.slice(1); // skip header
 
   const map = {};
   for (const row of data) {
     if (!row.length) continue;
-    const rk = parseInt(row[0], 10);
-    const team = row[1]?.trim();
+    const team = (row[1] || "").trim();
     if (!team) continue;
     const val = toNum(row[valueColIndex]);
+    const rk = toNum(row[0]);
     map[team] = { rk: Number.isFinite(rk) ? rk : null, value: val };
   }
   return map;
 }
 
 async function loadAllTeamStats() {
-  // Basic scoring / pace
+  setStatus("Loading TeamRankings stats...");
+
   const [ppg, oppg, poss] = await Promise.all([
-    loadTRSheet(TR_PPG_URL),
-    loadTRSheet(TR_OPPG_URL),
-    loadTRSheet(TR_POSS_URL)
+    loadTRSheet(TR_PPG_URL, 2),   // col C
+    loadTRSheet(TR_OPPG_URL, 2),
+    loadTRSheet(TR_POSS_URL, 2)
   ]);
 
-  // Advanced stats
   const [offEff, defEff, offReb, defReb, tov, efg] = await Promise.all([
-    loadTRSheet(TR_OFF_EFF_URL),
-    loadTRSheet(TR_DEF_EFF_URL),
-    loadTRSheet(TR_OFF_REB_URL),
-    loadTRSheet(TR_DEF_REB_URL),
-    loadTRSheet(TR_TOV_URL),
-    loadTRSheet(TR_EFG_URL)
+    loadTRSheet(TR_OFF_EFF_URL, 2),
+    loadTRSheet(TR_DEF_EFF_URL, 2),
+    loadTRSheet(TR_OFF_REB_URL, 2),
+    loadTRSheet(TR_DEF_REB_URL, 2),
+    loadTRSheet(TR_TOV_URL, 2),
+    loadTRSheet(TR_EFG_URL, 2)
   ]);
 
   const allTeams = new Set([
@@ -115,22 +119,23 @@ async function loadAllTeamStats() {
   ]);
 
   const result = {};
-  for (const name of allTeams) {
+  allTeams.forEach(name => {
     result[name] = {
       nameTR:  name,
       display: name,
-      rk:      ppg[name]?.rk ?? null,
-      ppg:     ppg[name]?.value ?? NaN,
-      oppg:    oppg[name]?.value ?? NaN,
-      poss:    poss[name]?.value ?? NaN,
-      offEff:  offEff[name]?.value ?? NaN,
-      defEff:  defEff[name]?.value ?? NaN,
-      offReb:  offReb[name]?.value ?? NaN,
-      defReb:  defReb[name]?.value ?? NaN,
-      tov:     tov[name]?.value ?? NaN,
-      efg:     efg[name]?.value ?? NaN
+      rk:      ppg[name] ? ppg[name].rk : null,
+      ppg:     ppg[name]   ? ppg[name].value   : NaN,
+      oppg:    oppg[name]  ? oppg[name].value  : NaN,
+      poss:    poss[name]  ? poss[name].value  : NaN,
+      offEff:  offEff[name] ? offEff[name].value : NaN,
+      defEff:  defEff[name] ? defEff[name].value : NaN,
+      offReb:  offReb[name] ? offReb[name].value : NaN,
+      defReb:  defReb[name] ? defReb[name].value : NaN,
+      tov:     tov[name]    ? tov[name].value    : NaN,
+      efg:     efg[name]    ? efg[name].value    : NaN
     };
-  }
+  });
+
   return result;
 }
 
@@ -138,8 +143,11 @@ async function loadAllTeamStats() {
 // TEAM MAP (TR <-> ESPN <-> Display)
 // ===============================
 async function loadTeamMap() {
+  setStatus("Loading team mapping...");
   const csv = await fetchCsv(TEAM_MAP_URL);
   const rows = parseCsv(csv);
+  if (!rows.length) return [];
+
   const header = rows[0].map(h => h.trim().toLowerCase());
   const data = rows.slice(1);
 
@@ -148,33 +156,34 @@ async function loadTeamMap() {
   const idxDisp = header.indexOf("display");
 
   if (idxTR === -1 || idxESPN === -1) {
-    console.warn("TEAM_MAP: expected 'TeamRanking' and 'ESPN' headers");
+    console.warn("Team map missing TeamRanking/ESPN headers");
+    return [];
   }
 
-  const map = [];
-  for (const row of data) {
-    const tr   = row[idxTR]?.trim();
-    const espn = row[idxESPN]?.trim();
-    const disp = idxDisp >= 0 ? row[idxDisp]?.trim() : (tr || espn);
-    if (!tr || !espn) continue;
-    map.push({ tr, espn, display: disp || tr });
-  }
-  return map;
+  const list = [];
+  data.forEach(row => {
+    const tr   = (row[idxTR] || "").trim();
+    const espn = (row[idxESPN] || "").trim();
+    const disp = idxDisp >= 0 ? (row[idxDisp] || "").trim() : tr || espn;
+    if (!tr || !espn) return;
+    list.push({ tr, espn, display: disp || tr });
+  });
+  return list;
 }
 
 // ===============================
 // LEAGUE PPP
 // ===============================
 function computeLeaguePPP(teams) {
-  let sum = 0, cnt = 0;
-  for (const t of Object.values(teams)) {
+  let sum = 0;
+  let cnt = 0;
+  Object.values(teams).forEach(t => {
     if (t.ppg > 0 && t.poss > 0) {
       sum += t.ppg / t.poss;
       cnt += 1;
     }
-  }
-  if (!cnt) return 1.05;
-  return sum / cnt;
+  });
+  return cnt ? sum / cnt : 1.05;
 }
 
 // ===============================
@@ -190,9 +199,8 @@ function pppFromEff(eff) {
   return eff / 100.0;
 }
 
-// Offense PPP vs specific opponent, with small nudges from rebounding, shooting, turnovers
 function hybridOffPPP(team, opp) {
-  // --- Base hybrid from PPG / Eff (vs opponent def) ---
+  // Base hybrid
   const ppp_ppg_off = pppFromPPG(team.ppg, team.poss);
   const ppp_eff_off = pppFromEff(team.offEff);
 
@@ -207,33 +215,28 @@ function hybridOffPPP(team, opp) {
 
   let basePPP = EFF_WEIGHT * ppp_off_eff + PPG_WEIGHT * ppp_off_ppg;
 
-  // --- Matchup-based nudges using only team vs opponent stats ---
-
+  // Small matchup nudges, using only team vs opponent stats
   let delta = 0;
 
-  // 1) OReb% vs opponent DReb%
+  // OReb% vs opp DReb%
   if (Number.isFinite(team.offReb) && Number.isFinite(opp.defReb)) {
-    const diff = team.offReb - opp.defReb;  // + if strong OReb vs weak DReb
-    // 10-point diff -> ~+0.015 PPP (~1 pt over 70 poss)
-    delta += 0.0015 * diff;
+    const diff = team.offReb - opp.defReb; // + if strong OReb vs weak DReb
+    delta += 0.0015 * diff; // 10 pt diff -> ~0.015 PPP
   }
 
-  // 2) eFG% vs opponent eFG% (rough skill vs their own offensive talent)
+  // eFG% vs opp eFG%
   if (Number.isFinite(team.efg) && Number.isFinite(opp.efg)) {
-    const diff = team.efg - opp.efg; // + if team shoots better than opp
-    // 10-point diff -> ~+0.01 PPP (~0.7 pts over 70 poss)
-    delta += 0.001 * diff;
+    const diff = team.efg - opp.efg;
+    delta += 0.001 * diff; // 10 pt diff -> ~0.01 PPP
   }
 
-  // 3) TOV% – lower is better, compare to opponent's TOV%
+  // TOV% (lower better)
   if (Number.isFinite(team.tov) && Number.isFinite(opp.tov)) {
-    const diff = opp.tov - team.tov; // + if team turns it over less than opp
-    // 10-point diff -> ~+0.015 PPP
+    const diff = opp.tov - team.tov; // + if team turns it over less
     delta += 0.0015 * diff;
   }
 
-  const pppFinal = basePPP + delta;
-  return pppFinal;
+  return basePPP + delta;
 }
 
 function projectGameHybrid(home, away) {
@@ -246,7 +249,7 @@ function projectGameHybrid(home, away) {
   const awayPts = pace * awayPPP;
 
   const total = homePts + awayPts;
-  const spreadHome = homePts - awayPts; // + = home favored
+  const spreadHome = homePts - awayPts;
 
   return { homePts, awayPts, total, spreadHome };
 }
@@ -270,24 +273,23 @@ function decideSpreadPlay(modelSpreadHome, bookSpreadHome, edgeThresh = 3) {
 
 function computeConfidence(edge) {
   const e = Math.min(Math.abs(edge), MAX_EDGE_FOR_CONF);
-  return (e / MAX_EDGE_FOR_CONF) * 10.0;
+  return (e / MAX_EDGE_FOR_CONF) * 10;
 }
 
 // ===============================
-// STATS COMPARISON TABLE
+// STATS COMPARISON
 // ===============================
-function fmtStat(val, decimals = 1) {
+function fmtStat(val, decimals) {
   return Number.isFinite(val) ? val.toFixed(decimals) : "–";
 }
 
-// Build stats comparison HTML for two teams
 function buildStatsComparisonHTML(teamA, teamB, labelA, labelB) {
   const stats = [
     { key: "ppg",    label: "PPG",   higherBetter: true  },
     { key: "oppg",   label: "PPGa",  higherBetter: false },
     { key: "offReb", label: "OReb%", higherBetter: true  },
     { key: "defReb", label: "DReb%", higherBetter: true  },
-    { key: "tov",    label: "TOV%",  higherBetter: false },
+    { key: "tov",    label: "TOV%",  higherBetter: false }
   ];
 
   let html = `
@@ -302,11 +304,9 @@ function buildStatsComparisonHTML(teamA, teamB, labelA, labelB) {
       <tbody>
   `;
 
-  for (const s of stats) {
+  stats.forEach(s => {
     const va = teamA[s.key];
     const vb = teamB[s.key];
-    const aVal = fmtStat(va);
-    const bVal = fmtStat(vb);
 
     let aClass = "";
     let bClass = "";
@@ -323,11 +323,11 @@ function buildStatsComparisonHTML(teamA, teamB, labelA, labelB) {
     html += `
       <tr>
         <td>${s.label}</td>
-        <td class="${aClass}">${aVal}</td>
-        <td class="${bClass}">${bVal}</td>
+        <td class="${aClass}">${fmtStat(va, 1)}</td>
+        <td class="${bClass}">${fmtStat(vb, 1)}</td>
       </tr>
     `;
-  }
+  });
 
   html += "</tbody></table>";
   return html;
@@ -337,12 +337,15 @@ function buildStatsComparisonHTML(teamA, teamB, labelA, labelB) {
 // DAILY GAMES
 // ===============================
 async function loadGames() {
+  setStatus("Loading ESPN daily games...");
+
   const csv = await fetchCsv(CBB_GAMES_URL);
   const rows = parseCsv(csv);
+  if (!rows.length) return;
+
   const header = rows[0].map(h => h.trim().toLowerCase());
   const data = rows.slice(1);
 
-  const idxDate  = header.indexOf("date");
   const idxTime  = header.indexOf("time");
   const idxAway  = header.indexOf("away");
   const idxHome  = header.indexOf("home");
@@ -350,16 +353,16 @@ async function loadGames() {
   const idxTotal = header.indexOf("booktotal");
 
   const list = [];
-  for (const row of data) {
-    const awayNameESPN = row[idxAway]?.trim();
-    const homeNameESPN = row[idxHome]?.trim();
-    if (!awayNameESPN || !homeNameESPN) continue;
 
-    const awayTR = espmToTR[awayNameESPN];
-    const homeTR = espmToTR[homeNameESPN];
+  data.forEach(row => {
+    const awayNameESPN = (row[idxAway] || "").trim();
+    const homeNameESPN = (row[idxHome] || "").trim();
+    if (!awayNameESPN || !homeNameESPN) return;
+
+    const awayTR = espnToTR[awayNameESPN];
+    const homeTR = espnToTR[homeNameESPN];
 
     const game = {
-      date: row[idxDate],
       time: row[idxTime],
       awayNameESPN,
       homeNameESPN,
@@ -369,26 +372,24 @@ async function loadGames() {
       bookTotal:      toNum(row[idxTotal]),
       proj: null,
       error: null,
-      isTop25: false,
+      isTop25: false
     };
 
     if (!awayTR || !homeTR || !teamsByTR[awayTR] || !teamsByTR[homeTR]) {
       game.error = `Model error: no stats found for "${!awayTR ? awayNameESPN : homeNameESPN}"`;
     } else {
-      const home = teamsByTR[homeTR];
       const away = teamsByTR[awayTR];
+      const home = teamsByTR[homeTR];
 
       const proj = projectGameHybrid(home, away);
-
       const spreadPlay = decideSpreadPlay(proj.spreadHome, game.bookSpreadHome);
       const totalsPlay = decideTotalsPlay(proj.total, game.bookTotal);
 
       const edgeSpread = Number.isFinite(game.bookSpreadHome)
-        ? Math.abs(proj.spreadHome - game.bookSpreadHome)
-        : 0;
+        ? Math.abs(proj.spreadHome - game.bookSpreadHome) : 0;
       const edgeTotal = Number.isFinite(game.bookTotal)
-        ? Math.abs(proj.total - game.bookTotal)
-        : 0;
+        ? Math.abs(proj.total - game.bookTotal) : 0;
+
       const conf = computeConfidence(Math.max(edgeSpread, edgeTotal));
 
       game.proj = {
@@ -401,18 +402,17 @@ async function loadGames() {
         confidence: conf
       };
 
-      const homeObj = teamsByTR[homeTR];
-      const awayObj = teamsByTR[awayTR];
       game.isTop25 =
-        (homeObj?.rk && homeObj.rk <= 25) ||
-        (awayObj?.rk && awayObj.rk <= 25);
+        (home.rk && home.rk <= 25) ||
+        (away.rk && away.rk <= 25);
     }
 
     list.push(game);
-  }
+  });
 
   games = list;
   renderGames();
+  setStatus("Ready");
 }
 
 function renderGames() {
@@ -420,11 +420,11 @@ function renderGames() {
   const countSpan = document.getElementById("games-count");
   if (!container) return;
 
-  const filterSel  = document.getElementById("games-filter");
+  const filterSel = document.getElementById("games-filter");
   const searchInput = document.getElementById("games-search");
 
   const filterVal = filterSel ? filterSel.value : "all";
-  const searchVal = (searchInput?.value || "").toLowerCase();
+  const searchVal = (searchInput && searchInput.value || "").toLowerCase();
 
   let filtered = games.slice();
 
@@ -454,26 +454,22 @@ function renderGames() {
       `;
     } else if (g.proj) {
       const p = g.proj;
-      const awayTR = g.awayTR;
-      const homeTR = g.homeTR;
-      const awayObj = teamsByTR[awayTR];
-      const homeObj = teamsByTR[homeTR];
+      const away = teamsByTR[g.awayTR];
+      const home = teamsByTR[g.homeTR];
+      const awayDisp = away ? away.display : g.awayNameESPN;
+      const homeDisp = home ? home.display : g.homeNameESPN;
 
-      const awayDisp = awayObj?.display || g.awayNameESPN;
-      const homeDisp = homeObj?.display || g.homeNameESPN;
+      const bookSpread = Number.isFinite(g.bookSpreadHome) ? g.bookSpreadHome.toFixed(1) : "N/A";
+      const bookTotal  = Number.isFinite(g.bookTotal) ? g.bookTotal.toFixed(1) : "N/A";
 
-      const bs = Number.isFinite(g.bookSpreadHome) ? g.bookSpreadHome.toFixed(1) : "N/A";
-      const bt = Number.isFinite(g.bookTotal)      ? g.bookTotal.toFixed(1)      : "N/A";
-
-      const statsHTML =
-        awayObj && homeObj
-          ? buildStatsComparisonHTML(awayObj, homeObj, awayDisp, homeDisp)
-          : "";
+      const statsHTML = (away && home)
+        ? buildStatsComparisonHTML(away, home, awayDisp, homeDisp)
+        : "";
 
       card.innerHTML = `
         <div class="game-title">${g.time || ""}  ${g.awayNameESPN} @ ${g.homeNameESPN}</div>
         <div>Model Score: ${awayDisp} ${p.awayScore.toFixed(1)} – ${homeDisp} ${p.homeScore.toFixed(1)}</div>
-        <div>Book Line / Total: ${bs} / ${bt}</div>
+        <div>Book Line / Total: ${bookSpread} / ${bookTotal}</div>
         <div>Model Line / Total: ${p.spreadHome.toFixed(1)} / ${p.total.toFixed(1)}</div>
         <div>Spread Play: ${p.spreadPlay} &nbsp; | &nbsp; Total Play: ${p.totalsPlay}</div>
         <div>Confidence: ${p.confidence.toFixed(1)} / 10</div>
@@ -500,31 +496,30 @@ function populateManualTeamInputs() {
     a.display.localeCompare(b.display)
   );
 
-  const awayEl = document.getElementById("manual-away-team");
-  const homeEl = document.getElementById("manual-home-team");
+  const awayInput = document.getElementById("manual-away-team");
+  const homeInput = document.getElementById("manual-home-team");
   const dl = document.getElementById("teamList");
 
-  // datalist for typeahead
   if (dl) {
     dl.innerHTML = teams
       .map(t => `<option value="${t.display}"></option>`)
       .join("");
   }
 
-  // if using <select>, also populate options
-  if (awayEl && awayEl.tagName === "SELECT") {
-    awayEl.innerHTML = "";
-    homeEl.innerHTML = "";
+  // If you used <select> instead of <input list>, this will fill them too
+  if (awayInput && awayInput.tagName === "SELECT") {
+    awayInput.innerHTML = "";
+    homeInput.innerHTML = "";
     teams.forEach(t => {
-      const optA = document.createElement("option");
-      optA.value = t.display;
-      optA.textContent = t.display;
-      awayEl.appendChild(optA);
+      const o1 = document.createElement("option");
+      o1.value = t.display;
+      o1.textContent = t.display;
+      awayInput.appendChild(o1);
 
-      const optH = document.createElement("option");
-      optH.value = t.display;
-      optH.textContent = t.display;
-      homeEl.appendChild(optH);
+      const o2 = document.createElement("option");
+      o2.value = t.display;
+      o2.textContent = t.display;
+      homeInput.appendChild(o2);
     });
   }
 }
@@ -533,7 +528,7 @@ function findTeamByDisplayOrTR(name) {
   if (!name) return null;
   const key = name.trim();
   if (teamsByDisplay[key]) return teamsByDisplay[key];
-  if (teamsByTR[key])       return teamsByTR[key];
+  if (teamsByTR[key]) return teamsByTR[key];
 
   const lower = key.toLowerCase();
   for (const t of Object.values(teamsByDisplay)) {
@@ -556,8 +551,8 @@ function runManualProjection() {
 
   const awayName = awayInput.value;
   const homeName = homeInput.value;
-  const bookSpreadHome = toNum(spreadInput?.value);
-  const bookTotal      = toNum(totalInput?.value);
+  const bookSpreadHome = toNum(spreadInput && spreadInput.value);
+  const bookTotal      = toNum(totalInput && totalInput.value);
 
   const away = findTeamByDisplayOrTR(awayName);
   const home = findTeamByDisplayOrTR(homeName);
@@ -568,29 +563,28 @@ function runManualProjection() {
   }
 
   const proj = projectGameHybrid(home, away);
-
   const spreadPlay = decideSpreadPlay(proj.spreadHome, bookSpreadHome);
   const totalsPlay = decideTotalsPlay(proj.total, bookTotal);
 
   const edgeSpread = Number.isFinite(bookSpreadHome)
-    ? Math.abs(proj.spreadHome - bookSpreadHome)
-    : 0;
+    ? Math.abs(proj.spreadHome - bookSpreadHome) : 0;
   const edgeTotal = Number.isFinite(bookTotal)
-    ? Math.abs(proj.total - bookTotal)
-    : 0;
+    ? Math.abs(proj.total - bookTotal) : 0;
   const conf = computeConfidence(Math.max(edgeSpread, edgeTotal));
 
   const awayDisp = away.display;
   const homeDisp = home.display;
-
   const statsHTML = buildStatsComparisonHTML(away, home, awayDisp, homeDisp);
 
-  const html = `
+  const bookSpreadTxt = Number.isFinite(bookSpreadHome) ? bookSpreadHome.toFixed(1) : "N/A";
+  const bookTotalTxt  = Number.isFinite(bookTotal) ? bookTotal.toFixed(1) : "N/A";
+
+  resultDiv.innerHTML = `
     <div class="manual-card">
-      <div class="game-title">🏀 ${awayDisp} @ ${homeDisp}</div>
+      <div class="game-title">${awayDisp} @ ${homeDisp}</div>
       <div>Projected Score | ${awayDisp}: ${proj.awayPts.toFixed(1)} ┊ ${homeDisp}: ${proj.homePts.toFixed(1)}</div>
-      <div>Spread (Home) | Model: ${proj.spreadHome.toFixed(1)} ┊ Book: ${Number.isFinite(bookSpreadHome) ? bookSpreadHome.toFixed(1) : "N/A"}</div>
-      <div>Totals | Model: ${proj.total.toFixed(1)} ┊ Book: ${Number.isFinite(bookTotal) ? bookTotal.toFixed(1) : "N/A"}</div>
+      <div>Spread (Home) | Model: ${proj.spreadHome.toFixed(1)} ┊ Book: ${bookSpreadTxt}</div>
+      <div>Totals | Model: ${proj.total.toFixed(1)} ┊ Book: ${bookTotalTxt}</div>
       <div>Spread Play | ${spreadPlay}</div>
       <div>Totals Play | ${totalsPlay}</div>
       <div>Confidence | ${conf.toFixed(1)} / 10</div>
@@ -600,8 +594,6 @@ function runManualProjection() {
       </div>
     </div>
   `;
-
-  resultDiv.innerHTML = html;
 }
 
 // ===============================
@@ -609,35 +601,39 @@ function runManualProjection() {
 // ===============================
 async function init() {
   try {
-    // Load core stats + mapping
+    setStatus("Loading data...");
+
+    // 1) Load TR stats
     teamsByTR = await loadAllTeamStats();
     leaguePPP = computeLeaguePPP(teamsByTR);
 
+    // 2) Load team mapping
     const mappings = await loadTeamMap();
-    espmToTR = {};
+    espnToTR = {};
     teamsByDisplay = {};
 
-    for (const m of mappings) {
+    mappings.forEach(m => {
       const trName   = m.tr;
       const espnName = m.espn;
       const disp     = m.display || trName;
-
-      espmToTR[espnName] = trName;
+      espnToTR[espnName] = trName;
       if (teamsByTR[trName]) {
         teamsByTR[trName].display = disp;
         teamsByDisplay[disp] = teamsByTR[trName];
       }
-    }
+    });
 
-    // fallback: ensure every TR team has a display entry
-    for (const [trName, t] of Object.entries(teamsByTR)) {
+    // fallback: ensure every TR team also exists in display map
+    Object.keys(teamsByTR).forEach(trName => {
+      const t = teamsByTR[trName];
       if (!t.display) t.display = trName;
       if (!teamsByDisplay[t.display]) teamsByDisplay[t.display] = t;
-    }
+    });
 
+    // 3) Populate manual inputs
     populateManualTeamInputs();
 
-    // manual run button
+    // 4) Wire manual run button
     const runBtn = document.getElementById("manual-run-btn");
     if (runBtn) {
       runBtn.addEventListener("click", e => {
@@ -646,13 +642,13 @@ async function init() {
       });
     }
 
-    // event delegation for stats toggles (manual + games)
-    const manualResult = document.getElementById("manual-result");
-    if (manualResult) {
-      manualResult.addEventListener("click", e => {
+    // 5) Stats toggle delegation (manual + games)
+    const manualRes = document.getElementById("manual-result");
+    if (manualRes) {
+      manualRes.addEventListener("click", e => {
         const btn = e.target;
         if (btn.classList && btn.classList.contains("stats-toggle")) {
-          const panel = manualResult.querySelector(".stats-panel");
+          const panel = manualRes.querySelector(".stats-panel");
           if (panel) panel.classList.toggle("hidden");
         }
       });
@@ -671,10 +667,10 @@ async function init() {
       });
     }
 
-    // filters/search/reload for games
-    const filterSel  = document.getElementById("games-filter");
+    // 6) Filters / search / reload for games
+    const filterSel   = document.getElementById("games-filter");
     const searchInput = document.getElementById("games-search");
-    const reloadBtn  = document.getElementById("reload-games-btn");
+    const reloadBtn   = document.getElementById("reload-games-btn");
 
     if (filterSel)   filterSel.addEventListener("change", renderGames);
     if (searchInput) searchInput.addEventListener("input", renderGames);
@@ -685,9 +681,11 @@ async function init() {
       });
     }
 
+    // 7) Load daily games
     await loadGames();
   } catch (err) {
     console.error(err);
+    setStatus("Error loading data");
     const container =
       document.getElementById("games-list") ||
       document.getElementById("manual-result");
