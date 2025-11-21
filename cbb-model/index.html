@@ -1,122 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CBB TeamRankings Model</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CBB Model</title>
+    <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-  <header class="top-header">
-    <div>
-      <h1>CBB TeamRankings Model</h1>
-      <p class="subtitle">Division I projections using TeamRankings stats</p>
-    </div>
-    <div id="status" class="status">Loading data…</div>
-  </header>
 
-  <!-- Mode toggle -->
-  <div class="mode-toggle">
-    <button id="btnManual" class="mode-btn active">Manual Model</button>
-    <button id="btnEspn" class="mode-btn">ESPN Daily Games</button>
-  </div>
+<div class="container">
 
-  <!-- Manual section -->
-  <section id="manualSection" class="card-block">
-    <h2>Manual Matchup</h2>
+    <h1>CBB Stat-Driven Model</h1>
 
-    <div class="form-grid">
-      <div class="form-field">
-        <label for="awayTeamInput">Away Team</label>
-        <input
-          id="awayTeamInput"
-          type="text"
-          list="teamList"
-          autocomplete="off"
-          placeholder="Start typing a team…"
-        />
-      </div>
+    <!-- ============================= -->
+    <!-- MANUAL MODEL INPUT SECTION   -->
+    <!-- ============================= -->
+    <div class="card">
 
-      <div class="form-field">
-        <label for="homeTeamInput">Home Team</label>
-        <input
-          id="homeTeamInput"
-          type="text"
-          list="teamList"
-          autocomplete="off"
-          placeholder="Start typing a team…"
-        />
-      </div>
+        <h2>Manual Game Predictor</h2>
+
+        <label>Home Team</label>
+        <input type="text" id="homeTeam" class="team-input" placeholder="Start typing team name..." autocomplete="off"/>
+
+        <label>Away Team</label>
+        <input type="text" id="awayTeam" class="team-input" placeholder="Start typing team name..." autocomplete="off"/>
+
+        <label>Book Spread (Home - )</label>
+        <input type="number" id="spreadInput" placeholder="-7.5" />
+
+        <label>Book Total</label>
+        <input type="number" id="totalInput" placeholder="145.5" />
+
+        <button id="predictBtn" class="btn primary">Predict Game</button>
+        <button id="compareBtn" class="btn secondary">Stat Comparison</button>
+        <button id="saveBtn" class="btn secondary">Save Game</button>
+
+        <!-- Prediction Output -->
+        <div id="predictionOutput" class="output"></div>
+
+        <!-- Stats Comparison Toggle Panel -->
+        <div id="comparisonPanel" class="comparison hidden"></div>
+
     </div>
 
-    <!-- shared datalist for both inputs -->
-    <datalist id="teamList"></datalist>
+    <!-- ============================= -->
+    <!-- SAVED GAMES VIEW BUTTON      -->
+    <!-- ============================= -->
+    <button id="openSavedBtn" class="btn saved-btn">Saved Games</button>
 
-    <div class="form-grid">
-      <div class="form-field">
-        <label for="bookSpread">Book Spread (Home)</label>
-        <input
-          id="bookSpread"
-          type="number"
-          step="0.5"
-          placeholder="-7.5"
-        />
-      </div>
+    <!-- ============================= -->
+    <!-- SAVED GAMES TABLE            -->
+    <!-- ============================= -->
+    <div id="savedGamesPanel" class="saved-panel hidden">
+        <h2>Saved Games</h2>
+        <table id="savedGamesTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Matchup</th>
+                    <th>Model Score</th>
+                    <th>Book Line</th>
+                    <th>Model Line</th>
+                    <th>Plays</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
 
-      <div class="form-field">
-        <label for="bookTotal">Book Total</label>
-        <input
-          id="bookTotal"
-          type="number"
-          step="0.5"
-          placeholder="145.5"
-        />
-      </div>
+        <button id="closeSavedBtn" class="btn secondary">Close</button>
     </div>
 
-    <div class="button-row">
-      <button id="runBtn" class="primary" disabled>Run Model</button>
-      <button id="saveBtn" class="secondary" disabled>Save Game</button>
-    </div>
+</div>
 
-    <section id="results" class="results-card hidden">
-      <h3>Result</h3>
-      <div id="resultBody"></div>
-    </section>
+<script src="app.js"></script>
 
-    <section class="saved-section">
-      <div class="saved-header-row">
-        <h3>Saved Games</h3>
-        <div class="button-row compact">
-          <button id="downloadBtn" class="secondary">Download CSV</button>
-          <button id="undoBtn" class="secondary">Undo Last</button>
-          <button id="clearBtn" class="secondary danger">Clear All</button>
-        </div>
-      </div>
-      <div id="savedTableWrap" class="table-container"></div>
-    </section>
-  </section>
-
-  <!-- ESPN / Sheet section -->
-  <section id="espnSection" class="card-block hidden">
-    <h2>Today&#39;s Games (ESPN &amp; TeamRankings)</h2>
-    <p class="muted">
-      Games are scraped to your <strong>CBB_Games</strong> sheet with Apps Script,
-      then projected here using the same model.
-    </p>
-    <div class="button-row">
-      <button id="reloadEspnBtn" class="primary">Reload Today&#39;s Games</button>
-    </div>
-
-    <div id="dailyCards" class="cards-container">
-      <!-- Cards injected by app.js -->
-    </div>
-  </section>
-
-  <footer class="footer">
-    <span class="muted">Powered by TeamRankings stats &amp; ESPN schedule</span>
-  </footer>
-
-  <script src="app.js"></script>
 </body>
 </html>
