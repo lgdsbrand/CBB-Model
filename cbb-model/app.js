@@ -15,21 +15,21 @@
 const DATA_SHEETS = {
   // PPG (season + last3 + home/away splits)
   PPG: {
-    url: "/mnt/data/ppg.csv",      // <-- replace with your local path or published CSV URL
+    url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRlCY5EpAHxehNqNMfcjDuZP9wzKyvc5RGJnLEeT-IAYWbwt7VJxVhpXtXfAhqwkCukiSVsrgS3yJtt/pub?gid=43309362&single=true&output=csv",      // <-- replace with your local path or published CSV URL
     teamCol: "B",
     seasonCol: "C",
-    l3Col: "H",       // set to "" if not present
-    homeCol: "J",     // set to "" if not present
-    awayCol: "K"      // set to "" if not present
+    l3Col: "D",       // set to "" if not present
+    homeCol: "F",     // set to "" if not present
+    awayCol: "G"      // set to "" if not present
   },
   // OPP PPG (opponent points allowed; same column mapping pattern)
   OPPG: {
-    url: "/mnt/data/oppg.csv",
+    url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRlCY5EpAHxehNqNMfcjDuZP9wzKyvc5RGJnLEeT-IAYWbwt7VJxVhpXtXfAhqwkCukiSVsrgS3yJtt/pub?gid=2084776942&single=true&output=csv",
     teamCol: "B",
     seasonCol: "C",
-    l3Col: "H",
-    homeCol: "J",
-    awayCol: "K"
+    l3Col: "D",
+    homeCol: "F",
+    awayCol: "G"
   },
   // Possessions
   POSS: {
